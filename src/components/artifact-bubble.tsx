@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  FileText,
-  GitCompare,
-  Code2,
-  CalendarClock,
-  ChevronRight,
-} from "lucide-react";
+import { FileText, GitCompare, Code2, CalendarClock, ChevronRight } from "lucide-react";
 import type { Artifact } from "@/lib/artifacts";
 import { cn } from "@/lib/utils";
 
@@ -24,13 +18,6 @@ const typeLabels = {
   planner: "Planner",
 };
 
-const typeGradients = {
-  document: "from-violet-500/20 to-violet-500/5",
-  comparison: "from-blue-500/20 to-blue-500/5",
-  code: "from-emerald-500/20 to-emerald-500/5",
-  planner: "from-amber-500/20 to-amber-500/5",
-};
-
 export function ArtifactBubble({
   artifact,
   onOpen,
@@ -39,7 +26,6 @@ export function ArtifactBubble({
   onOpen: () => void;
 }) {
   const Icon = typeIcons[artifact.type];
-  const gradient = typeGradients[artifact.type];
 
   let preview = "";
   if (artifact.type === "document" && artifact.sections?.length) {
@@ -55,31 +41,22 @@ export function ArtifactBubble({
   return (
     <button
       onClick={onOpen}
-      className={cn(
-        "group relative w-full max-w-md overflow-hidden rounded-xl border border-border bg-surface-2 hover:border-border-hover transition-all text-left",
-        "bg-gradient-to-br", gradient
-      )}
+      className="group relative w-full max-w-md overflow-hidden rounded-xl border border-border bg-surface hover:border-border-hover hover:bg-surface-2 transition-all text-left"
     >
       <div className="relative p-4">
         <div className="flex items-center gap-2.5 mb-2">
-          <div className="h-8 w-8 rounded-lg bg-surface-3 flex items-center justify-center">
-            <Icon className="h-4 w-4 text-foreground" />
+          <div className="h-8 w-8 rounded-lg bg-accent/10 flex items-center justify-center">
+            <Icon className="h-4 w-4 text-accent" />
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-[11px] uppercase tracking-wide text-muted-fg font-medium">
               {typeLabels[artifact.type]}
             </div>
-            <div className="text-sm font-medium text-foreground truncate">
-              {artifact.title}
-            </div>
+            <div className="text-sm font-medium text-foreground truncate">{artifact.title}</div>
           </div>
           <ChevronRight className="h-4 w-4 text-muted-fg group-hover:text-foreground group-hover:translate-x-0.5 transition-all" />
         </div>
-        {preview && (
-          <p className="text-xs text-muted-fg line-clamp-2 font-mono">
-            {preview}
-          </p>
-        )}
+        {preview && <p className="text-xs text-muted-fg line-clamp-2 font-mono">{preview}</p>}
       </div>
     </button>
   );

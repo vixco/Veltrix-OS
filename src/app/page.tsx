@@ -1,9 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Sparkles } from "lucide-react";
+import { PanelLeft, Plus, PenLine, Code2, GraduationCap, Lightbulb } from "lucide-react";
 import { Sidebar } from "@/components/sidebar";
-import { ModelSelector } from "@/components/model-selector";
 import { ChatMessage } from "@/components/chat-message";
 import { ChatInput } from "@/components/chat-input";
 import { ArtifactPanel } from "@/components/artifact-panel";
@@ -11,11 +10,12 @@ import { SettingsDialog } from "@/components/settings-dialog";
 import { useChatStore, useProviderStore } from "@/lib/store";
 import { getProvider } from "@/lib/providers";
 import { ARTIFACT_SYSTEM_PROMPT } from "@/lib/artifacts";
+import { ClaudeLogo } from "@/components/claude-logo";
 
 export default function HomePage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const conversations = useChatStore((s) => s.conversations);
@@ -26,80 +26,71 @@ export default function HomePage() {
   const updateMessage = useChatStore((s) => s.updateMessage);
   const setStreaming = useChatStore((s) => s.setStreaming);
   const getActiveConfig = useProviderStore((s) => s.getActiveConfig);
-  const activeProvider = useProviderStore((s) => s.activeProvider);
   const activeModel = useProviderStore((s) => s.activeModel);
 
   const activeConv = conversations.find((c) => c.id === activeId);
+  const isEmpty = !activeConv || activeConv.messages.length === 0;
 
-  // Auto-scroll
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [activeConv?.messages]);
 
-  const handleSend = useCallback(async (text: string) => {
-    let convId = activeId;
-    if (!convId) {
-      convId = createConversation();
-    }
+  const handleSend = useCallback(
+    async (text: string) => {
+      let convId = activeId;
+      if (!convId) convId = createConversation();
 
-    // Add user message
-    addMessage(convId, { role: "user", content: text });
+      addMessage(convId, { role: "user", content: text });
+      const assistantMsgId = addMessage(convId, { role: "assistant", content: "" });
+      setStreaming(true);
 
-    // Add empty assistant message
-    const assistantMsgId = addMessage(convId, { role: "assistant", content: "" });
+      const controller = new AbortController();
+      setAbortController(controller);
 
-    setStreaming(true);
+      try {
+        const config = getActiveConfig();
+        const adapter = getProvider(config.id);
 
-    const controller = new AbortController();
-    setAbortController(controller);
+        const messages = [
+          { role: "system" as const, content: ARTIFACT_SYSTEM_PROMPT },
+          ...(activeConv?.messages || []).map((m) => ({ role: m.role, content: m.content })),
+          { role: "user" as const, content: text },
+        ];
 
-    try {
-      const config = getActiveConfig();
-      const adapter = getProvider(config.id);
+        const stream = await adapter.streamCompletion(config, {
+          messages,
+          model: activeModel,
+          temperature: 0.7,
+          signal: controller.signal,
+        });
 
-      const messages = [
-        { role: "system" as const, content: ARTIFACT_SYSTEM_PROMPT },
-        ...(activeConv?.messages || []).map((m) => ({
-          role: m.role,
-          content: m.content,
-        })),
-        { role: "user" as const, content: text },
-      ];
+        const reader = stream.getReader();
+        let accumulated = "";
 
-      const stream = await adapter.streamCompletion(config, {
-        messages,
-        model: activeModel,
-        temperature: 0.7,
-        signal: controller.signal,
-      });
-
-      const reader = stream.getReader();
-      let accumulated = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value.delta) {
-          accumulated += value.delta;
-          updateMessage(convId, assistantMsgId, { content: accumulated });
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value.delta) {
+            accumulated += value.delta;
+            updateMessage(convId, assistantMsgId, { content: accumulated });
+          }
         }
+      } catch (err: any) {
+        if (err.name === "AbortError") {
+          updateMessage(convId, assistantMsgId, { content: "Generation stopped." });
+        } else {
+          updateMessage(convId, assistantMsgId, {
+            content: `Error: ${err.message}`,
+            error: true,
+          });
+        }
+      } finally {
+        setStreaming(false);
+        setAbortController(null);
       }
-    } catch (err: any) {
-      if (err.name === "AbortError") {
-        updateMessage(convId, assistantMsgId, {
-          content: "Generation stopped.",
-        });
-      } else {
-        updateMessage(convId, assistantMsgId, {
-          content: `Error: ${err.message}`,
-          error: true,
-        });
-      }
-    } finally {
-      setStreaming(false);
-      setAbortController(null);
-    }
-  }, [activeId, activeConv, activeModel, getActiveConfig, addMessage, createConversation, setStreaming, updateMessage]);
+    },
+    [activeId, activeConv, activeModel, getActiveConfig, addMessage, createConversation, setStreaming, updateMessage]
+  );
 
   const handleStop = useCallback(() => {
     abortController?.abort();
@@ -107,56 +98,68 @@ export default function HomePage() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background">
-      <Sidebar onOpenSettings={() => setSettingsOpen(true)} />
+      <Sidebar
+        onOpenSettings={() => setSettingsOpen(true)}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
+      />
 
-      {/* Main area */}
       <div className="flex-1 flex min-w-0">
         {/* Chat column */}
         <div className="flex-1 flex flex-col min-w-0">
-          {/* Header */}
-          <header className="flex items-center justify-between px-6 h-14 border-b border-border shrink-0">
-            <ModelSelector />
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-fg">
-                {activeConv ? `${activeConv.messages.length} messages` : ""}
-              </span>
+          {sidebarCollapsed && (
+            <header className="flex items-center justify-between px-3 h-12 shrink-0">
+              <button
+                onClick={() => setSidebarCollapsed(false)}
+                className="flex items-center gap-2 px-2.5 h-8 rounded-lg text-muted-fg hover:text-foreground hover:bg-surface-2 transition-colors text-[13px]"
+              >
+                <PanelLeft className="h-[18px] w-[18px]" />
+              </button>
+              <button
+                onClick={() => createConversation()}
+                className="p-2 rounded-lg text-muted-fg hover:text-foreground hover:bg-surface-2 transition-colors"
+                title="New chat"
+              >
+                <Plus className="h-[18px] w-[18px]" />
+              </button>
+            </header>
+          )}
+
+          {isEmpty ? (
+            <div className="flex-1 flex flex-col justify-center px-4 pb-6">
+              <WelcomeScreen onPick={handleSend} />
+              <ChatInput onSend={handleSend} onStop={handleStop} />
             </div>
-          </header>
-
-          {/* Messages */}
-          <div ref={scrollRef} className="flex-1 overflow-y-auto">
-            {!activeConv || activeConv.messages.length === 0 ? (
-              <EmptyState />
-            ) : (
-              <div className="py-4">
-                {activeConv.messages.map((msg, i) => (
-                  <ChatMessage
-                    key={msg.id}
-                    message={msg}
-                    convId={activeConv.id}
-                    onRegenerate={
-                      msg.role === "assistant" && i > 0
-                        ? () => {
-                            const prevMsg = activeConv.messages[i - 1];
-                            if (prevMsg && prevMsg.role === "user") {
-                              updateMessage(activeConv.id, msg.id, { content: "" });
-                              handleSend(prevMsg.content);
+          ) : (
+            <>
+              <div className="flex-1 overflow-y-auto">
+                <div className="py-4">
+                  {activeConv!.messages.map((msg, i) => (
+                    <ChatMessage
+                      key={msg.id}
+                      message={msg}
+                      convId={activeConv!.id}
+                      onRegenerate={
+                        msg.role === "assistant" && i > 0
+                          ? () => {
+                              const prevMsg = activeConv!.messages[i - 1];
+                              if (prevMsg && prevMsg.role === "user") {
+                                updateMessage(activeConv!.id, msg.id, { content: "" });
+                                handleSend(prevMsg.content);
+                              }
                             }
-                          }
-                        : undefined
-                    }
-                  />
-                ))}
-                <div ref={bottomRef} />
+                          : undefined
+                      }
+                    />
+                  ))}
+                  <div ref={bottomRef} />
+                </div>
               </div>
-            )}
-          </div>
-
-          {/* Input */}
-          <ChatInput onSend={handleSend} onStop={handleStop} />
+              <ChatInput onSend={handleSend} onStop={handleStop} />
+            </>
+          )}
         </div>
 
-        {/* Artifact panel */}
         <ArtifactPanel />
       </div>
 
@@ -165,38 +168,61 @@ export default function HomePage() {
   );
 }
 
-function EmptyState() {
-  const examples = [
-    { icon: "📋", title: "Make a plan", desc: "Create a structured plan" },
-    { icon: "📊", title: "Compare options", desc: "Side-by-side comparison" },
-    { icon: "🎨", title: "Build a UI", desc: "Generate HTML component" },
-    { icon: "📅", title: "Schedule", desc: "Plan a timeline" },
-  ];
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning";
+  if (h < 18) return "Good afternoon";
+  return "Good evening";
+}
 
+const SUGGESTIONS = [
+  {
+    icon: PenLine,
+    title: "Write",
+    prompt: "Help me write a warm, professional email to my team announcing a project kickoff.",
+  },
+  {
+    icon: Code2,
+    title: "Code",
+    prompt: "Write a TypeScript function that debounces an async function and explain how it works.",
+  },
+  {
+    icon: GraduationCap,
+    title: "Learn",
+    prompt: "Explain how transformers work in machine learning, in simple terms.",
+  },
+  {
+    icon: Lightbulb,
+    title: "Brainstorm",
+    prompt: "Brainstorm 10 creative names for a coffee shop focused on remote workers.",
+  },
+];
+
+function WelcomeScreen({ onPick }: { onPick: (text: string) => void }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full px-6">
-      <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-accent to-blue-500 flex items-center justify-center mb-6 glow-accent">
-        <Sparkles className="h-8 w-8 text-white" />
+    <div className="mx-auto w-full max-w-[768px] flex flex-col items-center text-center">
+      <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-surface-2">
+        <ClaudeLogo className="h-8 w-8 text-accent" />
       </div>
-      <h1 className="text-3xl font-bold tracking-tight text-foreground mb-2">
-        Welcome to <span className="gradient-text">Veltrix OS</span>
+      <h1 suppressHydrationWarning className="font-serif text-[34px] sm:text-[40px] leading-tight font-normal text-foreground">
+        {greeting()}
       </h1>
-      <p className="text-muted-fg text-[15px] mb-10 max-w-md text-center">
-        Your AI operating system. Ask anything, or request an artifact — a plan, document, comparison, or code.
-      </p>
-      <div className="grid grid-cols-2 gap-3 max-w-lg w-full">
-        {examples.map((ex) => (
-          <div
-            key={ex.title}
-            className="flex items-start gap-3 p-4 rounded-xl bg-surface-2 border border-border hover:border-border-hover transition-colors cursor-pointer"
-          >
-            <span className="text-xl">{ex.icon}</span>
-            <div>
-              <p className="text-sm font-medium text-foreground">{ex.title}</p>
-              <p className="text-xs text-muted-fg">{ex.desc}</p>
-            </div>
-          </div>
-        ))}
+      <p className="mt-2 text-[15px] text-muted-fg">How can I help you today?</p>
+
+      <div className="mt-7 grid grid-cols-2 gap-2.5 w-full">
+        {SUGGESTIONS.map((s) => {
+          const Icon = s.icon;
+          return (
+            <button
+              key={s.title}
+              onClick={() => onPick(s.prompt)}
+              className="flex items-center gap-2.5 px-3.5 py-3 rounded-xl border border-border bg-surface/60 hover:bg-surface-2 hover:border-border-hover transition-colors text-left"
+            >
+              <Icon className="h-4 w-4 text-accent shrink-0" />
+              <span className="text-[13px] font-medium text-foreground">{s.title}</span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );

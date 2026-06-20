@@ -1,21 +1,26 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { ArrowUp, Square, Paperclip } from "lucide-react";
-import { useChatStore, useProviderStore } from "@/lib/store";
+import { ArrowUp, Square, Plus } from "lucide-react";
+import { useChatStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { ModelSelector } from "./model-selector";
 
-export function ChatInput({ onSend, onStop }: { onSend: (text: string) => void; onStop: () => void }) {
+export function ChatInput({
+  onSend,
+  onStop,
+}: {
+  onSend: (text: string) => void;
+  onStop: () => void;
+}) {
   const [text, setText] = useState("");
   const isStreaming = useChatStore((s) => s.isStreaming);
-  const activeProvider = useProviderStore((s) => s.activeProvider);
-  const activeModel = useProviderStore((s) => s.activeModel);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 200) + "px";
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 220) + "px";
     }
   }, [text]);
 
@@ -33,45 +38,57 @@ export function ChatInput({ onSend, onStop }: { onSend: (text: string) => void; 
   };
 
   return (
-    <div className="px-6 pb-6 pt-2">
-      <div className="max-w-3xl mx-auto">
+    <div className="px-4 pb-4 pt-2">
+      <div className="mx-auto w-full max-w-[768px]">
         <div
           className={cn(
-            "relative flex items-end gap-2 rounded-2xl bg-surface-2 border border-border transition-colors focus-within:border-border-hover",
-            "shadow-lg shadow-black/20"
+            "relative flex flex-col rounded-[26px] bg-surface border border-border transition-shadow",
+            "shadow-sm focus-within:border-border-hover focus-within:shadow-md"
           )}
         >
-          <button className="p-2.5 text-muted-fg hover:text-foreground transition-colors" title="Attach file">
-            <Paperclip className="h-4.5 w-4.5" />
-          </button>
           <textarea
             ref={textareaRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask anything..."
+            placeholder="How can I help you today?"
             rows={1}
-            className="flex-1 bg-transparent py-3.5 text-[15px] text-foreground placeholder:text-muted-fg resize-none focus:outline-none max-h-[200px]"
+            className="w-full bg-transparent px-5 pt-4 pb-2 text-[15px] leading-relaxed text-foreground placeholder:text-muted-fg resize-none focus:outline-none max-h-[220px]"
           />
-          {isStreaming ? (
-            <button
-              onClick={onStop}
-              className="m-2 h-8 w-8 flex items-center justify-center rounded-lg bg-surface-3 text-foreground hover:bg-destructive/20 hover:text-destructive transition-colors"
-            >
-              <Square className="h-3.5 w-3.5" fill="currentColor" />
-            </button>
-          ) : (
-            <button
-              onClick={handleSend}
-              disabled={!text.trim()}
-              className="m-2 h-8 w-8 flex items-center justify-center rounded-lg bg-accent text-white hover:bg-accent/90 disabled:opacity-30 disabled:pointer-events-none transition-all active:scale-90"
-            >
-              <ArrowUp className="h-4 w-4" />
-            </button>
-          )}
+
+          <div className="flex items-center justify-between px-3 pb-3 pt-1">
+            <div className="flex items-center gap-1">
+              <button
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-fg hover:text-foreground hover:bg-surface-2 transition-colors"
+                title="Add attachment"
+              >
+                <Plus className="h-[18px] w-[18px]" />
+              </button>
+              <ModelSelector variant="pill" />
+            </div>
+
+            {isStreaming ? (
+              <button
+                onClick={onStop}
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground text-background hover:opacity-80 transition-opacity"
+                title="Stop"
+              >
+                <Square className="h-3.5 w-3.5" fill="currentColor" />
+              </button>
+            ) : (
+              <button
+                onClick={handleSend}
+                disabled={!text.trim()}
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground text-background hover:opacity-80 disabled:opacity-25 disabled:pointer-events-none transition-all active:scale-90"
+                title="Send"
+              >
+                <ArrowUp className="h-[18px] w-[18px]" />
+              </button>
+            )}
+          </div>
         </div>
-        <p className="text-center text-[11px] text-muted-fg/40 mt-2">
-          {activeProvider} · {activeModel}
+        <p className="text-center text-[11px] text-muted-fg/50 mt-2">
+          Veltrix can make mistakes. Check important info.
         </p>
       </div>
     </div>
