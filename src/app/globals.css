@@ -1,0 +1,124 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Design tokens ── */
+:root {
+  --bg: 12 12 14;
+  --fg: 235 235 240;
+  --surface: 20 20 24;
+  --surface-2: 28 28 33;
+  --surface-3: 36 36 42;
+  --border: 38 38 44;
+  --border-hover: 52 52 60;
+  --muted: 16 16 19;
+  --muted-fg: 140 140 150;
+  --primary: 235 235 240;
+  --primary-fg: 12 12 14;
+  --accent: 168 113 255;
+  --accent-fg: 255 255 255;
+  --accent-soft: 168 113 255;
+  --destructive: 239 68 68;
+  --success: 52 211 153;
+  --warning: 251 191 36;
+  --radius: 12px;
+
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", monospace;
+}
+
+* {
+  border-color: rgb(var(--border));
+}
+
+html {
+  font-feature-settings: "cv11", "ss01", "ss03";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background: rgb(var(--bg));
+  color: rgb(var(--fg));
+  font-family: var(--font-sans);
+  overflow: hidden;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--surface-3));
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover { background: rgb(var(--border-hover)); }
+
+/* Selection */
+::selection {
+  background: rgb(var(--accent) / 0.25);
+  color: rgb(var(--fg));
+}
+
+/* Focus ring */
+*:focus-visible {
+  outline: 2px solid rgb(var(--accent) / 0.5);
+  outline-offset: 2px;
+}
+
+/* Prose tweaks */
+.prose-veltrix { @apply text-[15px] leading-[1.75] text-foreground; }
+.prose-veltrix p { @apply mb-4; }
+.prose-veltrix h1 { @apply text-2xl font-semibold mb-3 mt-5; }
+.prose-veltrix h2 { @apply text-xl font-semibold mb-3 mt-5; }
+.prose-veltrix h3 { @apply text-lg font-semibold mb-2 mt-4; }
+.prose-veltrix ul { @apply mb-4 space-y-1.5 pl-5 list-disc text-foreground/90; }
+.prose-veltrix ol { @apply mb-4 space-y-1.5 pl-5 list-decimal text-foreground/90; }
+.prose-veltrix code {
+  @apply font-mono text-[13px] px-1.5 py-0.5 rounded-md bg-surface-2 text-accent;
+}
+.prose-veltrix pre {
+  @apply mb-4 p-4 rounded-lg bg-surface-2 border border-border overflow-x-auto;
+}
+.prose-veltrix pre code {
+  @apply bg-transparent p-0 text-foreground;
+}
+.prose-veltrix blockquote {
+  @apply border-l-2 border-accent/40 pl-4 italic text-muted-fg mb-4;
+}
+.prose-veltrix a { @apply text-accent underline underline-offset-2; }
+.prose-veltrix hr { @apply border-border my-6; }
+.prose-veltrix table { @apply w-full mb-4 text-sm; }
+.prose-veltrix th { @apply text-left font-semibold p-2 border-b border-border; }
+.prose-veltrix td { @apply p-2 border-b border-border/50; }
+
+/* Streaming cursor */
+.stream-cursor::after {
+  content: "▍";
+  @apply text-accent animate-pulse;
+  margin-left: 2px;
+}
+
+/* Gradient text */
+.gradient-text {
+  background: linear-gradient(135deg, rgb(168 113 255), rgb(99 179 237));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Subtle glow */
+.glow-accent {
+  box-shadow: 0 0 20px rgb(var(--accent) / 0.15);
+}
+
+/* Shimmer placeholder */
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    rgb(var(--surface)) 0%,
+    rgb(var(--surface-2)) 50%,
+    rgb(var(--surface)) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s linear infinite;
+}
