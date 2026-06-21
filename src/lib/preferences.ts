@@ -87,6 +87,10 @@ export interface ModelCapabilityPrefs {
   aiPoweredArtifacts: boolean;
   codeExecution: boolean;
   allowNetwork: boolean;
+  /** Allow Veltrix to reach the internet via the host (web search + fetch, no API key). */
+  webAccess: boolean;
+  /** Allow Veltrix to run shell commands and read/write files on the host machine. */
+  hostAccess: boolean;
   /** Provider used when no explicit per-chat provider is chosen. */
   defaultProvider: string;
   defaultModel: string;
@@ -178,6 +182,8 @@ export const usePreferences = create<PreferencesState>()(
         aiPoweredArtifacts: true,
         codeExecution: true,
         allowNetwork: false,
+        webAccess: true,
+        hostAccess: true,
         defaultProvider: "ollama",
         defaultModel: "",
       },
@@ -215,6 +221,8 @@ export const usePreferences = create<PreferencesState>()(
             aiPoweredArtifacts: true,
             codeExecution: true,
             allowNetwork: false,
+        webAccess: true,
+        hostAccess: true,
             defaultProvider: "ollama",
             defaultModel: "",
           },

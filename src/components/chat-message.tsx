@@ -1,10 +1,6 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { Copy, Check, Pencil, RefreshCw, FileText } from "lucide-react";
 import { useChatStore, useArtifactStore, type Message } from "@/lib/store";
 import { parseArtifactTags } from "@/lib/artifacts";
@@ -12,6 +8,7 @@ import { ArtifactInline } from "./artifact-inline";
 import { ArtifactCreating } from "./artifact-creating";
 import { formatBytes } from "@/lib/utils";
 import { ThinkingBlock } from "./thinking-block";
+import { RichText } from "./tool-block";
 
 export function ChatMessage({
   message,
@@ -160,43 +157,7 @@ export function ChatMessage({
               />
             )}
 
-            {beforeArtifact.trim() && (
-              <div className="prose-claude">
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  components={{
-                    code({ className, children, ...props }) {
-                      const match = /language-(\w+)/.exec(className || "");
-                      const inline = !match;
-                      if (!inline && match) {
-                        return (
-                          <SyntaxHighlighter
-                            language={match[1]}
-                            style={oneDark}
-                            PreTag="div"
-                            customStyle={{
-                              margin: 0,
-                              background: "transparent",
-                              padding: 0,
-                              fontSize: "13.5px",
-                            }}
-                          >
-                            {String(children).replace(/\n$/, "")}
-                          </SyntaxHighlighter>
-                        );
-                      }
-                      return (
-                        <code className={className} {...props}>
-                          {children}
-                        </code>
-                      );
-                    },
-                  }}
-                >
-                  {beforeArtifact}
-                </ReactMarkdown>
-              </div>
-            )}
+            {beforeArtifact.trim() && <RichText text={beforeArtifact} />}
 
             {artifact && (
               <ArtifactInline artifact={artifact} onOpenPanel={() => openPanel(artifact.id)} />
@@ -206,11 +167,7 @@ export function ChatMessage({
               <ArtifactCreating type={artifactInProgress.type} title={artifactInProgress.title} />
             )}
 
-            {afterArtifact.trim() && !artifactInProgress && (
-              <div className="prose-claude">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{afterArtifact}</ReactMarkdown>
-              </div>
-            )}
+            {afterArtifact.trim() && !artifactInProgress && <RichText text={afterArtifact} />}
 
             {streaming && message.content && !beforeArtifact.includes("<artifact") && !artifactInProgress && (
               <span className="stream-caret inline-block align-text-bottom" aria-hidden="true" />

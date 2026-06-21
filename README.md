@@ -80,4 +80,8 @@ src/
 
 ## License
 
-MIT
+Veltrix OS is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the [LICENSE](./LICENSE) file for the full terms, or <https://www.gnu.org/licenses/>.
+
+Network use (e.g. offering Veltrix OS as a hosted service) counts as distribution under the AGPLv3, so you must make the corresponding source code available to users of the service.

@@ -21,6 +21,7 @@ import { MODES, type WorkMode } from "@/lib/modes";
 import { useProjectStore } from "@/lib/project-store";
 import { useAuthStore } from "@/lib/auth-store";
 import { buildSystemPrompt } from "@/lib/persona";
+import { buildSelfContext, buildToolset, runAgentTurn } from "@/lib/agent";
 import { extractMemories, remember, connectNode, buildMemoryContext } from "@/lib/memory-engine";
 import { useMemoryStore } from "@/lib/memory-store";
 import { Palette, Users } from "lucide-react";
@@ -32,6 +33,8 @@ const STYLE_DIRECTIVES: Record<string, string> = {
   concise: "Tight and to the point. Say the important thing well, then stop. No padding.",
   playful: "Light and fun when it fits. A bit of bounce and humor, but never at the cost of being useful.",
 };
+
+const APP_VERSION = "0.1.0";
 
 function enhancedSystemBase(): string {
   const p = usePreferences.getState();
@@ -137,27 +140,53 @@ export default function HomePage() {
             "No model selected. Open provider settings (sidebar) to pick a model, then resend."
           );
         }
-        const stream = await adapter.streamCompletion(config, {
-          messages,
-          model: activeModel,
-          temperature: 0.7,
-          signal: controller.signal,
+        const __prefs = usePreferences.getState();
+        const __tools = buildToolset({
+          webAccess: !!__prefs.capabilities.webAccess,
+          hostAccess: !!__prefs.capabilities.hostAccess,
         });
-        const reader = stream.getReader();
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          if (value?.thinking) {
-            if (thinkingStart === null) thinkingStart = Date.now();
-            thinking += value.thinking;
-            updateMessage(convId, assistantMsgId, { thinking });
-          }
-          if (value?.delta) {
-            if (thinkingStart !== null && thinkingEnd === null) thinkingEnd = Date.now();
-            accumulated += value.delta;
-            updateMessage(convId, assistantMsgId, { content: accumulated });
-          }
-        }
+        // Self-awareness: append a fresh, accurate self-model to the system
+        // prompt so Veltrix knows who it is, what it runs on, and which tools
+        // it can actually call this turn.
+        const __self = await buildSelfContext({
+          version: APP_VERSION,
+          providerLabel: config.label,
+          model: activeModel,
+          tools: __tools,
+          hostAccess: !!__prefs.capabilities.hostAccess,
+          webAccess: !!__prefs.capabilities.webAccess,
+        });
+        const __finalMessages = messages.map((m, i) =>
+          i === 0 && m.role === "system" && typeof m.content === "string"
+            ? { ...m, content: (m.content as string) + "\n\n" + __self }
+            : m
+        );
+
+        await runAgentTurn({
+          messages: __finalMessages as any,
+          tools: __tools,
+          signal: controller.signal,
+          maxIterations: 8,
+          hooks: {
+            stream: (msgs, sig) =>
+              adapter.streamCompletion(config, {
+                messages: msgs,
+                model: activeModel,
+                temperature: 0.7,
+                signal: sig,
+              }),
+            onContent: (full) => {
+              if (thinkingStart !== null && thinkingEnd === null) thinkingEnd = Date.now();
+              accumulated = full;
+              updateMessage(convId, assistantMsgId, { content: full });
+            },
+            onThinking: (full) => {
+              if (thinkingStart === null) thinkingStart = Date.now();
+              thinking = full;
+              updateMessage(convId, assistantMsgId, { thinking });
+            },
+          },
+        });
       } catch (err: any) {
         pendingTurnRef.current = null;
         if (err?.name === "AbortError") {

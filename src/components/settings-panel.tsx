@@ -821,6 +821,14 @@ function ModelsTab() {
           <Row title="Allow network access" desc="Let tools and code execution reach the network.">
             <Switch checked={caps.allowNetwork} onChange={(v) => setCaps({ allowNetwork: v })} />
           </Row>
+          <div className="h-px bg-border my-1" />
+          <Row title="Web access (no API key)" desc="Let Veltrix search and fetch the web through the host server.">
+            <Switch checked={caps.webAccess} onChange={(v) => setCaps({ webAccess: v })} />
+          </Row>
+          <div className="h-px bg-border my-1" />
+          <Row title="Host access" desc="Let Veltrix run shell commands and read/write files on this machine.">
+            <Switch checked={caps.hostAccess} onChange={(v) => setCaps({ hostAccess: v })} />
+          </Row>
         </Card>
       </div>
     </div>
