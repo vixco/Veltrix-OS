@@ -147,7 +147,7 @@ export function parseArtifactTags(text: string): {
   if (type === "code" || type === "design") {
     const codeMatch = inner.match(/<!\[CDATA\[([\s\S]*?)\]\]>/);
     artifact = {
-      id: generateId(),
+      id: artifactHash(type, title, inner),
       type,
       title,
       language,
@@ -179,7 +179,7 @@ export function parseArtifactTags(text: string): {
         score: scoreMatch ? parseFloat(scoreMatch[1]) : undefined,
       });
     }
-    artifact = { id: generateId(), type, title, items, createdAt: now, updatedAt: now };
+    artifact = { id: artifactHash(type, title, inner), type, title, items, createdAt: now, updatedAt: now };
   } else if (type === "planner") {
     const plan: PlannerItem[] = [];
     const entryRegex = /<entry\s+([^>]*)>([\s\S]*?)<\/entry>/g;
@@ -195,7 +195,7 @@ export function parseArtifactTags(text: string): {
         description: body || undefined,
       });
     }
-    artifact = { id: generateId(), type, title, plan, createdAt: now, updatedAt: now };
+    artifact = { id: artifactHash(type, title, inner), type, title, plan, createdAt: now, updatedAt: now };
   } else {
     // document
     const sections: ArtifactSection[] = [];
@@ -212,12 +212,19 @@ export function parseArtifactTags(text: string): {
         items: items.length > 0 ? items : undefined,
       });
     }
-    artifact = { id: generateId(), type, title, sections, createdAt: now, updatedAt: now };
+    artifact = { id: artifactHash(type, title, inner), type, title, sections, createdAt: now, updatedAt: now };
   }
 
   return { beforeArtifact, artifact, afterArtifact };
 }
 
-function generateId(): string {
-  return `art_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+// Deterministic id derived from the artifact content so the same message
+// yields a stable id across renders. A random/Date.now()-based id would
+// change every render and loop the ChatMessage effect that stamps the
+// message with its artifact id (Maximum update depth exceeded).
+function artifactHash(type: string, title: string, inner: string): string {
+  let h = 5381;
+  const str = `${type}|${title}|${inner}`;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+  return `art_${(h >>> 0).toString(36)}`;
 }

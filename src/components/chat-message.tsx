@@ -38,12 +38,15 @@ export function ChatMessage({
     ? parseArtifactTags(message.content)
     : { beforeArtifact: message.content, artifact: null, afterArtifact: "" };
 
+  // Register a parsed artifact once per (stable) artifact id. Depend on the
+  // id string rather than the `artifact` object, which is a fresh reference
+  // every render and would otherwise retrigger this effect constantly.
   useEffect(() => {
     if (artifact && message.artifactId !== artifact.id) {
       useArtifactStore.getState().setArtifact(artifact);
       updateMessage(convId, message.id, { artifactId: artifact.id });
     }
-  }, [artifact, message.artifactId, convId, message.id, updateMessage]);
+  }, [artifact?.id, message.artifactId, convId, message.id, updateMessage]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(message.content);
