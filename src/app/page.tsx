@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { PanelLeft, Plus, PenLine, Code2, GraduationCap, Lightbulb } from "lucide-react";
@@ -6,7 +6,11 @@ import { Sidebar } from "@/components/sidebar";
 import { ChatMessage } from "@/components/chat-message";
 import { ChatInput } from "@/components/chat-input";
 import { ArtifactPanel } from "@/components/artifact-panel";
-import { SettingsDialog } from "@/components/settings-dialog";
+import { SettingsPanel } from "@/components/settings-panel";
+import { NotificationToasts } from "@/components/notification-toasts";
+import { usePreferences } from "@/lib/preferences";
+import { notifyResponseComplete } from "@/lib/notifications";
+import { enabledCapabilities } from "@/lib/tools-catalog";
 import { useChatStore, useProviderStore, type Attachment } from "@/lib/store";
 import { getProvider, type ContentPart } from "@/lib/providers";
 import { ARTIFACT_SYSTEM_PROMPT } from "@/lib/artifacts";
@@ -16,10 +20,47 @@ import { AuthGuard } from "@/components/auth-guard";
 import { MODES, type WorkMode } from "@/lib/modes";
 import { useProjectStore } from "@/lib/project-store";
 import { useAuthStore } from "@/lib/auth-store";
+import { buildSystemPrompt } from "@/lib/persona";
+import { extractMemories, remember, connectNode, buildMemoryContext } from "@/lib/memory-engine";
+import { useMemoryStore } from "@/lib/memory-store";
 import { Palette, Users } from "lucide-react";
 
+const STYLE_DIRECTIVES: Record<string, string> = {
+  buttery: "Warm and smooth. Easy, natural flow. Soft transitions between ideas. Friendly without being saccharine.",
+  professional: "Crisp and direct. Work-focused, minimal flourishes, no filler. Get to the point quickly.",
+  chill: "Relaxed and casual. Conversational, low-key, unhurried. Like talking to a friend who happens to know the answer.",
+  concise: "Tight and to the point. Say the important thing well, then stop. No padding.",
+  playful: "Light and fun when it fits. A bit of bounce and humor, but never at the cost of being useful.",
+};
+
+function enhancedSystemBase(): string {
+  const p = usePreferences.getState();
+  const parts = [ARTIFACT_SYSTEM_PROMPT];
+  const caps = enabledCapabilities(p.tools);
+  if (caps.length) {
+    parts.push("## Installed tools & skills\nYou have access to these capabilities: " + caps.join("; ") + ". Use them when they genuinely help.");
+  }
+  if (!p.capabilities.artifacts || !p.capabilities.aiPoweredArtifacts) {
+    parts.push("Artifacts are currently disabled, so reply in plain text/markdown instead of producing interactive artifacts.");
+  }
+  if (!p.capabilities.codeExecution) {
+    parts.push("Code execution is disabled; do not attempt to run code.");
+  }
+  if (p.profile.workDescription.trim()) {
+    parts.push("## About the person\n" + p.profile.workDescription.trim());
+  }
+  if (p.profile.instructions.trim()) {
+    parts.push("## Custom instructions\n" + p.profile.instructions.trim());
+  }
+  parts.push("## Reply style\n" + (STYLE_DIRECTIVES[p.appearance.style] || STYLE_DIRECTIVES.buttery));
+  if (p.profile.displayName.trim()) {
+    parts.push("When a name fits naturally, call the person " + p.profile.displayName.trim() + ".");
+  }
+  return parts.join("\n\n");
+}
 export default function HomePage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<string | undefined>(undefined);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
   const [mode, setMode] = useState<WorkMode>("chat");
@@ -40,6 +81,7 @@ export default function HomePage() {
   const updateMessage = useChatStore((s) => s.updateMessage);
   const truncateAfter = useChatStore((s) => s.truncateAfter);
   const setStreaming = useChatStore((s) => s.setStreaming);
+  const renameConversation = useChatStore((s) => s.renameConversation);
   const getActiveConfig = useProviderStore((s) => s.getActiveConfig);
   const activeModel = useProviderStore((s) => s.activeModel);
   const { load: loadProjects } = useProjectStore();
@@ -139,6 +181,22 @@ export default function HomePage() {
         }
         setStreaming(false);
         setAbortController(null);
+        // Response completion notification (bottom-right toast + optional desktop/sound).
+        const __prefs = usePreferences.getState();
+        if (__prefs.notifications.responseCompletions) {
+          const __c = useChatStore.getState().conversations.find((x) => x.id === convId);
+          const __last = __c?.messages[__c.messages.length - 1];
+          const __body = typeof __last?.content === "string" ? __last.content.slice(0, 140) : "";
+          notifyResponseComplete({
+            conversationId: convId,
+            title: "Response complete",
+            body: (__c?.title || "Veltrix") + (__body ? " - " + __body : ""),
+            startedAt: thinkingStart ?? undefined,
+            enabled: true,
+            desktop: __prefs.notifications.desktopNotifications,
+            sound: __prefs.notifications.sound,
+          });
+        }
         // If steering messages were queued during this turn, kick off the
         // follow-up assistant turn now (only reached on natural completion;
         // abort/error clear the ref in the catch above).
@@ -152,6 +210,42 @@ export default function HomePage() {
     [activeModel, getActiveConfig, setStreaming, updateMessage]
   );
 
+  // Generate a short, descriptive chat title from the first user message
+  // using the active provider. Falls back to a truncated slice of the
+  // prompt if the model call fails so the sidebar is never stuck on
+  // "New chat".
+  const generateTitle = useCallback(
+    async (convId: string, userText: string) => {
+      const config = getActiveConfig();
+      const adapter = getProvider(config.id);
+      try {
+        const stream = await adapter.streamCompletion(config, {
+          messages: [
+            { role: "system", content: "Generate a concise chat title of 3 to 6 words that summarizes the user request. Reply with the title only, no quotes, no trailing punctuation, no preface." },
+            { role: "user", content: userText.slice(0, 800) },
+          ],
+          model: activeModel,
+          temperature: 0.3,
+        });
+        const reader = stream.getReader();
+        let title = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value?.delta) title += value.delta;
+        }
+        title = title.replace(/^[\'"]+|[\'"]+$/g, "").replace(/\s+/g, " ").trim().replace(/[.!?]+$/, "").slice(0, 60);
+        if (title) renameConversation(convId, title);
+        else renameConversation(convId, userText.slice(0, 40) || "New chat");
+      } catch {
+        renameConversation(convId, userText.slice(0, 40) || "New chat");
+      }
+    },
+    [activeModel, getActiveConfig, renameConversation]
+  );
+
+
+
   // Build the message array for one assistant turn and stream it into a fresh
   // empty assistant message. Shared by the initial send and the steering
   // auto-continue path so behavior stays identical.
@@ -160,14 +254,28 @@ export default function HomePage() {
       const assistantMsgId = addMessage(convId, { role: "assistant", content: "" });
       const conv = useChatStore.getState().conversations.find((c) => c.id === convId);
       const history = (conv?.messages || []).filter((m) => m.id !== assistantMsgId);
-      const systemPrompt = ARTIFACT_SYSTEM_PROMPT + "\n\n" + MODES[mode].systemPromptExtra;
+      const __lastUser = [...history].reverse().find((m) => m.role === "user");
+      const __query = typeof __lastUser?.content === "string" ? __lastUser.content : "";
+      const __projectId = useProjectStore.getState().activeProjectId || "global";
+      const __project = useProjectStore.getState().projects.find((p) => p.id === __projectId);
+      const __memCtx = usePreferences.getState().memory.useContext ? buildMemoryContext(__query, __projectId, 600) : "";
+      const systemPrompt = buildSystemPrompt(enhancedSystemBase(), MODES[mode].systemPromptExtra, __project?.instructions || "", __memCtx);
       const messages = [
         { role: "system" as const, content: systemPrompt },
         ...history.map((m) => ({ role: m.role as "user" | "assistant", content: m.role === "user" ? buildMessageContent(m.content, m.attachments) : m.content })),
       ];
       await streamInto(convId, assistantMsgId, messages);
+      if (usePreferences.getState().memory.generateFromChat) harvestMemories(convId);
+      // First exchange of a fresh chat: ask the model for a short title
+      // instead of leaving the sidebar showing the raw first prompt.
+      const firstUser = history.find((m) => m.role === "user");
+      const hadNoAssistant = !history.some((m) => m.role === "assistant");
+      if (firstUser && hadNoAssistant) {
+        const userText = typeof firstUser.content === "string" ? firstUser.content : "";
+        generateTitle(convId, userText);
+      }
     },
-    [mode, addMessage, streamInto]
+    [mode, addMessage, streamInto, generateTitle]
   );
 
   useEffect(() => {
@@ -202,12 +310,18 @@ export default function HomePage() {
       if (idx === -1) return;
       const history = conv.messages.slice(0, idx);
       updateMessage(convId, assistantMsgId, { content: "", thinking: "", thinkingMs: undefined, error: false });
-      const systemPrompt = ARTIFACT_SYSTEM_PROMPT + "\n\n" + MODES[mode].systemPromptExtra;
+      const __lastUser = [...history].reverse().find((m) => m.role === "user");
+      const __query = typeof __lastUser?.content === "string" ? __lastUser.content : "";
+      const __projectId = useProjectStore.getState().activeProjectId || "global";
+      const __project = useProjectStore.getState().projects.find((p) => p.id === __projectId);
+      const __memCtx = usePreferences.getState().memory.useContext ? buildMemoryContext(__query, __projectId, 600) : "";
+      const systemPrompt = buildSystemPrompt(enhancedSystemBase(), MODES[mode].systemPromptExtra, __project?.instructions || "", __memCtx);
       const messages = [
         { role: "system" as const, content: systemPrompt },
         ...history.map((m) => ({ role: m.role as "user" | "assistant", content: m.role === "user" ? buildMessageContent(m.content, m.attachments) : m.content })),
       ];
       await streamInto(convId, assistantMsgId, messages);
+      if (usePreferences.getState().memory.generateFromChat) harvestMemories(convId);
     },
     [mode, streamInto, updateMessage]
   );
@@ -223,12 +337,18 @@ export default function HomePage() {
       const assistantMsgId = addMessage(convId, { role: "assistant", content: "" });
       const fresh = useChatStore.getState().conversations.find((c) => c.id === convId);
       const history = (fresh?.messages || []).filter((m) => m.id !== assistantMsgId);
-      const systemPrompt = ARTIFACT_SYSTEM_PROMPT + "\n\n" + MODES[mode].systemPromptExtra;
+      const __lastUser = [...history].reverse().find((m) => m.role === "user");
+      const __query = typeof __lastUser?.content === "string" ? __lastUser.content : "";
+      const __projectId = useProjectStore.getState().activeProjectId || "global";
+      const __project = useProjectStore.getState().projects.find((p) => p.id === __projectId);
+      const __memCtx = usePreferences.getState().memory.useContext ? buildMemoryContext(__query, __projectId, 600) : "";
+      const systemPrompt = buildSystemPrompt(enhancedSystemBase(), MODES[mode].systemPromptExtra, __project?.instructions || "", __memCtx);
       const messages = [
         { role: "system" as const, content: systemPrompt },
         ...history.map((m) => ({ role: m.role as "user" | "assistant", content: m.role === "user" ? buildMessageContent(m.content, m.attachments) : m.content })),
       ];
       await streamInto(convId, assistantMsgId, messages);
+      if (usePreferences.getState().memory.generateFromChat) harvestMemories(convId);
     },
     [mode, addMessage, streamInto, updateMessage, truncateAfter]
   );
@@ -242,7 +362,7 @@ export default function HomePage() {
     <AuthGuard>
     <div className="flex h-screen w-screen overflow-hidden bg-background">
       <Sidebar
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={(tab?: string) => { setSettingsTab(tab); setSettingsOpen(true); }}
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
       />
@@ -310,12 +430,34 @@ export default function HomePage() {
         <ArtifactPanel />
       </div>
 
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} initialTab={settingsTab} />
+      <NotificationToasts />
     </div>
     </AuthGuard>
   );
 }
 
+function harvestMemories(convId: string) {
+  try {
+    const conv = useChatStore.getState().conversations.find((c) => c.id === convId);
+    if (!conv) return;
+    const msgs = conv.messages;
+    const assistant = msgs[msgs.length - 1];
+    if (!assistant || assistant.role !== "assistant") return;
+    const content = typeof assistant.content === "string" ? assistant.content : "";
+    if (!content || content.length < 20 || content.startsWith("Generation stopped.") || (assistant as any).error) return;
+    const lastUser = [...msgs].reverse().find((m) => m.role === "user");
+    if (!lastUser) return;
+    const userText = typeof lastUser.content === "string" ? lastUser.content : "";
+    if (!userText) return;
+    const projectId = useProjectStore.getState().activeProjectId || "global";
+    const candidates = extractMemories(userText, content);
+    for (const mem of candidates.slice(0, 5)) {
+      const node = remember(projectId, convId, mem, mem.strength >= 0.7 ? "long" : "short");
+      if (node) connectNode(node.id);
+    }
+  } catch {}
+}
 const GREETINGS = {
   morning: [
     "Good morning",

@@ -114,31 +114,41 @@ export function parseArtifactTags(text: string): {
   beforeArtifact: string;
   artifact: Artifact | null;
   afterArtifact: string;
+  artifactInProgress: { type: ArtifactType; title: string } | null;
 } {
   const openMatch = text.match(/<artifact\s+([^>]+)>/);
   if (!openMatch) {
-    return { beforeArtifact: text, artifact: null, afterArtifact: "" };
+    return { beforeArtifact: text, artifact: null, afterArtifact: "", artifactInProgress: null };
   }
 
   const beforeArtifact = text.slice(0, openMatch.index);
   const afterOpen = text.slice(openMatch.index! + openMatch[0].length);
 
+  // Parse attributes from the opening tag (available even before the
+  // closing tag arrives, so we can show a "creating" state while streaming).
+  const attrStr = openMatch[1];
+  const typeMatch = attrStr.match(/type="([^"]+)"/);
+  const titleMatch = attrStr.match(/title="([^"]+)"/);
+  const type = (typeMatch?.[1] as ArtifactType) || "document";
+  const title = titleMatch?.[1] || "Untitled";
+
   const closeMatch = afterOpen.match(/<\/artifact>/);
   if (!closeMatch) {
-    return { beforeArtifact, artifact: null, afterArtifact: afterOpen };
+    // Artifact is still streaming in -- only the opening tag has arrived.
+    // Don't expose the raw half-written content to the renderer; surface a
+    // calm "creating" state and reveal the artifact once it is complete.
+    return {
+      beforeArtifact,
+      artifact: null,
+      afterArtifact: "",
+      artifactInProgress: { type, title },
+    };
   }
 
   const inner = afterOpen.slice(0, closeMatch.index);
   const afterArtifact = afterOpen.slice(closeMatch.index! + closeMatch[0].length);
 
-  // Parse attributes from opening tag
-  const attrStr = openMatch[1];
-  const typeMatch = attrStr.match(/type="([^"]+)"/);
-  const titleMatch = attrStr.match(/title="([^"]+)"/);
   const langMatch = attrStr.match(/language="([^"]+)"/);
-
-  const type = (typeMatch?.[1] as ArtifactType) || "document";
-  const title = titleMatch?.[1] || "Untitled";
   const language = langMatch?.[1];
 
   const now = Date.now();
@@ -215,7 +225,7 @@ export function parseArtifactTags(text: string): {
     artifact = { id: artifactHash(type, title, inner), type, title, sections, createdAt: now, updatedAt: now };
   }
 
-  return { beforeArtifact, artifact, afterArtifact };
+  return { beforeArtifact, artifact, afterArtifact, artifactInProgress: null };
 }
 
 // Deterministic id derived from the artifact content so the same message

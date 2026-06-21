@@ -276,3 +276,83 @@ body {
 @keyframes ripple-expand {
   to { transform: scale(2.4); opacity: 0; }
 }
+
+/* Artifact "creating" shimmer skeleton */
+.shimmer-bar {
+  position: relative;
+  overflow: hidden;
+}
+.shimmer-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgb(var(--surface-3) / 0.9), transparent);
+  animation: shimmer-sweep 1.4s ease-in-out infinite;
+}
+@keyframes shimmer-sweep {
+  100% { transform: translateX(100%); }
+}
+
+/* === Theme presets === */
+/* Feltrix Black: OpenAI-style near-black + teal accent. */
+[data-theme-preset="feltrix-black"] {
+  --bg: 255 255 255;
+  --bg-sidebar: 247 247 248;
+  --surface: 255 255 255;
+  --surface-2: 247 247 248;
+  --surface-3: 236 236 241;
+  --border: 229 229 235;
+  --border-hover: 210 210 214;
+  --fg: 32 33 35;
+  --muted: 247 247 248;
+  --muted-fg: 110 112 120;
+  --primary: 32 33 35;
+  --primary-fg: 255 255 255;
+  --accent: 16 163 127;
+  --accent-hover: 14 140 108;
+  --accent-fg: 255 255 255;
+  --accent-soft: 16 163 127;
+  --destructive: 220 80 70;
+  --success: 16 163 127;
+  --warning: 217 119 87;
+}
+[data-theme-preset="feltrix-black"].dark {
+  --bg: 13 13 15;
+  --bg-sidebar: 17 17 20;
+  --surface: 24 24 27;
+  --surface-2: 33 33 36;
+  --surface-3: 48 48 52;
+  --border: 42 42 48;
+  --border-hover: 64 64 70;
+  --fg: 236 236 241;
+  --muted: 24 24 27;
+  --muted-fg: 165 167 178;
+  --primary: 236 236 241;
+  --primary-fg: 13 13 15;
+  --accent: 16 163 127;
+  --accent-hover: 22 188 147;
+  --accent-fg: 255 255 255;
+  --accent-soft: 16 163 127;
+  --destructive: 230 90 80;
+  --success: 22 188 147;
+}
+
+/* === Chat font application === */
+[data-chat-font="serif"] .prose-claude,
+[data-chat-font="serif"] .chat-input-textarea { font-family: var(--font-serif); }
+[data-chat-font="mono"] .prose-claude,
+[data-chat-font="mono"] .chat-input-textarea { font-family: var(--font-mono); }
+
+[data-chat-font-size] .prose-claude { font-size: var(--chat-font-size, 15px); }
+
+/* === Motion control === */
+/* Reduced motion: strip decorative animations, keep things instant for performance. */
+[data-motion="reduced"] *,
+[data-motion="reduced"] *::before,
+[data-motion="reduced"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.05ms !important;
+  scroll-behavior: auto !important;
+}

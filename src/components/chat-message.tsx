@@ -9,6 +9,7 @@ import { Copy, Check, Pencil, RefreshCw, FileText } from "lucide-react";
 import { useChatStore, useArtifactStore, type Message } from "@/lib/store";
 import { parseArtifactTags } from "@/lib/artifacts";
 import { ArtifactInline } from "./artifact-inline";
+import { ArtifactCreating } from "./artifact-creating";
 import { formatBytes } from "@/lib/utils";
 import { ThinkingBlock } from "./thinking-block";
 
@@ -34,9 +35,9 @@ export function ChatMessage({
 
   const isUser = message.role === "user";
 
-  const { beforeArtifact, artifact, afterArtifact } = !isUser
+  const { beforeArtifact, artifact, afterArtifact, artifactInProgress } = !isUser
     ? parseArtifactTags(message.content)
-    : { beforeArtifact: message.content, artifact: null, afterArtifact: "" };
+    : { beforeArtifact: message.content, artifact: null, afterArtifact: "", artifactInProgress: null };
 
   // Register a parsed artifact once per (stable) artifact id. Depend on the
   // id string rather than the `artifact` object, which is a fresh reference
@@ -201,13 +202,17 @@ export function ChatMessage({
               <ArtifactInline artifact={artifact} onOpenPanel={() => openPanel(artifact.id)} />
             )}
 
-            {afterArtifact.trim() && (
+            {artifactInProgress && !artifact && (
+              <ArtifactCreating type={artifactInProgress.type} title={artifactInProgress.title} />
+            )}
+
+            {afterArtifact.trim() && !artifactInProgress && (
               <div className="prose-claude">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{afterArtifact}</ReactMarkdown>
               </div>
             )}
 
-            {streaming && message.content && !beforeArtifact.includes("<artifact") && (
+            {streaming && message.content && !beforeArtifact.includes("<artifact") && !artifactInProgress && (
               <span className="stream-caret inline-block align-text-bottom" aria-hidden="true" />
             )}
 

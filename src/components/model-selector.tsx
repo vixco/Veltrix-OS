@@ -1,10 +1,11 @@
-"use client";
+﻿"use client";
 
 import { useState, useRef, useEffect, useMemo } from "react";
 import { ChevronDown, ChevronRight, Check, SlidersHorizontal, Loader2, RefreshCw, AlertCircle, Search } from "lucide-react";
 import { useProviderStore } from "@/lib/store";
 import { PROVIDERS, type ProviderId } from "@/lib/providers";
 import { cn } from "@/lib/utils";
+import { ModelLogo } from "@/lib/model-logos";
 
 export function ModelSelector({ variant = "pill" }: { variant?: "pill" | "header" }) {
   const activeProvider = useProviderStore((s) => s.activeProvider);
@@ -105,7 +106,7 @@ export function ModelSelector({ variant = "pill" }: { variant?: "pill" | "header
             : "h-9 px-3 text-sm hover:bg-surface-2"
         )}
       >
-        <SlidersHorizontal className="h-3.5 w-3.5" />
+        <ModelLogo modelId={currentModel?.id || ""} provider={activeProvider} className="h-4 w-4" />
         <span className="font-medium text-foreground/90">{currentModel?.name || "Select model"}</span>
         <ChevronDown className={cn("h-3.5 w-3.5 opacity-60 transition-transform", open && "rotate-180")} />
       </button>
@@ -121,7 +122,7 @@ export function ModelSelector({ variant = "pill" }: { variant?: "pill" | "header
                   ref={searchRef}
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search models…"
+                  placeholder="Search modelsâ€¦"
                   className="w-full h-8 pl-8 pr-3 rounded-lg bg-surface-2 border border-border text-[13px] text-foreground placeholder:text-muted-fg/50 focus:outline-none focus:border-accent/50 transition-colors"
                 />
               </div>
@@ -184,7 +185,7 @@ export function ModelSelector({ variant = "pill" }: { variant?: "pill" | "header
                   {!isCollapsed && (
                     <div className="max-h-[280px] overflow-y-auto scrollbar-thin">
                       {st === "connecting" && models.length === 0 && (
-                        <div className="px-2.5 py-2 text-[12px] text-muted-fg">Connecting…</div>
+                        <div className="px-2.5 py-2 text-[12px] text-muted-fg">Connectingâ€¦</div>
                       )}
                       {st === "error" && (
                         <div className="px-2.5 py-2 text-[12px] text-destructive/90 leading-snug">
@@ -208,6 +209,7 @@ export function ModelSelector({ variant = "pill" }: { variant?: "pill" | "header
                                 : "text-muted-fg hover:text-foreground hover:bg-surface-2"
                             )}
                           >
+                            <ModelLogo modelId={model.id} provider={pid} className="h-5 w-5 shrink-0" />
                             <span className="flex-1 min-w-0">
                               <span className="text-[13.5px] font-medium block truncate">{model.name}</span>
                               {model.description && (

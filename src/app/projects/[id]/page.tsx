@@ -2,7 +2,7 @@
 
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Plus, Trash2, MessageSquare, Settings, FileText } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, MessageSquare, Settings, FileText, Brain } from "lucide-react";
 import { useAuthStore } from "@/lib/auth-store";
 import { useProjectStore } from "@/lib/project-store";
 import { useChatStore } from "@/lib/store";
@@ -122,6 +122,16 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               <h1 className="text-xl font-semibold text-foreground">{project.title}</h1>
             )}
           </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => router.push(`/projects/${id}/memory`)}
+            className="text-accent hover:text-accent-hover"
+            title="Open the memory brain"
+          >
+            <Brain className="h-4 w-4" />
+            Memory
+          </Button>
           <Button
             variant="ghost"
             size="sm"

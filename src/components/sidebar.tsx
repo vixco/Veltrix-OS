@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useMemo } from "react";
 import {
@@ -6,22 +6,20 @@ import {
   Search,
   Trash2,
   Download,
-  Settings,
   PanelLeftClose,
-  Sun,
-  Moon,
   MessageSquare,
-  LogOut,
-  LogIn,
   Folder,
+  Brain,
 } from "lucide-react";
 import { useChatStore } from "@/lib/store";
-import { useTheme } from "@/lib/use-theme";
 import { cn, downloadText, conversationToMarkdown } from "@/lib/utils";
 import { ClaudeLogo } from "./claude-logo";
-import { useAuthStore } from "@/lib/auth-store";
+import { UserMenu } from "./user-menu";
 import { useProjectStore } from "@/lib/project-store";
+import { useMemoryStore } from "@/lib/memory-store";
 import { useRouter } from "next/navigation";
+import { Dialog, DialogHeader, DialogBody, DialogFooter } from "./ui/dialog";
+import { Button } from "./ui/button";
 
 interface SidebarProps {
   onOpenSettings: () => void;
@@ -48,10 +46,10 @@ export function Sidebar({ onOpenSettings, collapsed, onToggleCollapse }: Sidebar
   const setActive = useChatStore((s) => s.setActive);
   const deleteConversation = useChatStore((s) => s.deleteConversation);
   const [hoverId, setHoverId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const { theme, toggle } = useTheme();
-  const { user, signOut, mode } = useAuthStore();
   const { projects, activeProjectId } = useProjectStore();
+const memoryCount = useMemoryStore((s) => s.nodes.length);
   const router = useRouter();
 
   const filtered = useMemo(() => {
@@ -123,6 +121,19 @@ export function Sidebar({ onOpenSettings, collapsed, onToggleCollapse }: Sidebar
         </button>
       </div>
 
+      {/* Memory link */}
+      <div className="px-3 pb-2">
+        <button
+          onClick={() => router.push("/memory")}
+          className="w-full flex items-center gap-2.5 px-3 h-8 rounded-lg text-[12.5px] font-medium text-muted-fg hover:text-foreground hover:bg-surface-2 transition-all duration-150 active:scale-[0.98]"
+        >
+          <Brain className="h-3.5 w-3.5" />
+          Memory
+          {memoryCount > 0 && (
+            <span className="ml-auto text-[11px] text-muted-fg/60">{memoryCount}</span>
+          )}
+        </button>
+      </div>
       {/* Search */}
       <div className="px-3 pb-2">
         <div className="relative">
@@ -183,7 +194,7 @@ export function Sidebar({ onOpenSettings, collapsed, onToggleCollapse }: Sidebar
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            deleteConversation(conv.id);
+                            setConfirmDeleteId(conv.id);
                           }}
                           className="p-1 rounded hover:bg-destructive/15 hover:text-destructive transition-all duration-150 active:scale-90"
                           title="Delete"
@@ -200,53 +211,39 @@ export function Sidebar({ onOpenSettings, collapsed, onToggleCollapse }: Sidebar
         )}
       </div>
 
-      {/* Footer */}
-      <div className="border-t border-border p-2 space-y-0.5">
-        <button
-          onClick={toggle}
-          className="w-full flex items-center gap-2.5 px-3 h-9 rounded-lg text-[13px] text-muted-fg hover:text-foreground hover:bg-surface-2 transition-all duration-150 active:scale-[0.98]"
-        >
-          {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          {theme === "dark" ? "Light mode" : "Dark mode"}
-        </button>
-        <button
-          onClick={onOpenSettings}
-          className="w-full flex items-center gap-2.5 px-3 h-9 rounded-lg text-[13px] text-muted-fg hover:text-foreground hover:bg-surface-2 transition-all duration-150 active:scale-[0.98]"
-        >
-          <Settings className="h-4 w-4" />
-          Provider settings
-        </button>
-        {user && (
-          <div className="flex items-center gap-2.5 px-2 pt-2 mt-1 border-t border-border">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-accent-fg text-[12px] font-semibold uppercase">
-              {user.name.charAt(0)}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-[12px] font-medium text-foreground truncate">{user.name}</p>
-              <p className="text-[11px] text-muted-fg truncate">
-                {mode === "cloud" ? user.email : "Local guest"}
-              </p>
-            </div>
-            {mode === "cloud" ? (
-              <button
-                onClick={signOut}
-                className="p-1.5 rounded-lg text-muted-fg hover:text-destructive hover:bg-destructive/10 transition-all duration-150 active:scale-90"
-                title="Sign out"
-              >
-                <LogOut className="h-4 w-4" />
-              </button>
-            ) : (
-              <button
-                onClick={() => router.push("/login")}
-                className="p-1.5 rounded-lg text-muted-fg hover:text-accent hover:bg-surface-2 transition-all duration-150 active:scale-90"
-                title="Sign in to sync"
-              >
-                <LogIn className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-        )}
+            {/* Footer - Claude-style user menu */}
+      <div className="border-t border-border p-2">
+        <UserMenu onOpenSettings={onOpenSettings} />
       </div>
+      {/* Delete confirmation */}
+      <Dialog
+        open={confirmDeleteId !== null}
+        onClose={() => setConfirmDeleteId(null)}
+        className="max-w-sm"
+      >
+        <DialogHeader
+          title="Delete chat?"
+          description="This will permanently remove the conversation and any memories learned from it. This cannot be undone."
+        />
+        <DialogFooter>
+          <Button variant="ghost" size="sm" onClick={() => setConfirmDeleteId(null)}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => {
+              if (!confirmDeleteId) return;
+              deleteConversation(confirmDeleteId);
+              useMemoryStore.getState().forgetConversation(confirmDeleteId);
+              setConfirmDeleteId(null);
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Delete
+          </Button>
+        </DialogFooter>
+      </Dialog>
     </aside>
   );
 }

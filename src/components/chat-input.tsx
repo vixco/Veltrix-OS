@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { ArrowUp, Square, Plus, X, FileText, ImageIcon } from "lucide-react";
@@ -136,7 +136,7 @@ export function ChatInput({ onSend, onStop, mode, onModeChange }: ChatInputProps
             onKeyDown={handleKeyDown}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
-            placeholder={busy ? "Reading file…" : placeholder}
+            placeholder={busy ? "Reading fileâ€¦" : placeholder}
             rows={1}
             className="w-full bg-transparent px-5 pt-4 pb-2 text-[15px] leading-relaxed text-foreground placeholder:text-muted-fg resize-none focus:outline-none max-h-[220px]"
           />
