@@ -288,7 +288,22 @@ export const useChatStore = create<ChatState>()(
         return state.conversations.find((c) => c.id === state.activeId) || null;
       },
     }),
-    { name: "veltrix-chats" }
+    {
+      name: "veltrix-chats",
+      // Never persist isStreaming: a previous turn that was
+      // interrupted by a reload would otherwise leave the store stuck in
+      // streaming mode, which makes every new send fall into the steering
+      // branch and never start an assistant turn.
+      partialize: (state) => ({
+        conversations: state.conversations,
+        activeId: state.activeId,
+      }),
+      merge: (persisted, current) => ({
+        ...current,
+        ...((persisted as Partial<ChatState>) || {}),
+        isStreaming: false,
+      }),
+    }
   )
 );
 

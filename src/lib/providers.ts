@@ -303,6 +303,50 @@ const OpenRouterAdapter: ProviderAdapter = {
   },
 };
 
+// Ollama Cloud (https://ollama.com/v1) exposes an OpenAI-compatible API,
+// while a local Ollama server uses its native /api/tags + /api/chat routes.
+// We branch on the base URL so the same provider entry works for both.
+function isOllamaCloud(base: string): boolean {
+  try {
+    const u = new URL(base);
+    return u.hostname === "ollama.com" || u.pathname.replace(/\/$/, "").endsWith("/v1");
+  } catch {
+    return false;
+  }
+}
+async function safeText(res: Response): Promise<string> {
+  try { return (await res.text()).trim().slice(0, 200); } catch { return ""; }
+}
+
+function extractJsonReply(text: string): string {
+  // Single OpenAI-style completion object.
+  try {
+    const json = JSON.parse(text);
+    return json.choices?.[0]?.message?.content ?? json.error?.message ?? "";
+  } catch {}
+  // NDJSON: one JSON object per line (Ollama native streaming shape).
+  let out = "";
+  for (const line of text.split("\n")) {
+    const t = line.trim();
+    if (!t || !t.startsWith("{")) continue;
+    try {
+      const d = JSON.parse(t);
+      out += d.choices?.[0]?.delta?.content || d.choices?.[0]?.message?.content || d.message?.content || "";
+    } catch {}
+  }
+  return out;
+}
+
+function singleChunkStream(content: string): ReadableStream<StreamChunk> {
+  return new ReadableStream({
+    start(controller) {
+      if (content) controller.enqueue({ delta: content, done: false });
+      controller.enqueue({ delta: "", done: true });
+      controller.close();
+    },
+  });
+}
+
 const OllamaAdapter: ProviderAdapter = {
   id: "ollama",
   label: "Ollama",
@@ -312,6 +356,16 @@ const OllamaAdapter: ProviderAdapter = {
   async fetchModels(config) {
     const base = (config.baseUrl || OllamaAdapter.defaultBaseUrl).replace(/\/$/, "");
     const headers = config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : undefined;
+    if (isOllamaCloud(base)) {
+      const res = await proxyFetch(`${base}/models`, "GET", undefined, undefined, headers);
+      if (!res.ok) throw new Error(`Ollama list error: ${res.status} ${await safeText(res)}`);
+      const json = await res.json();
+      return (json.data || []).map((m: any) => ({
+        id: m.id,
+        name: m.id,
+        provider: "ollama" as ProviderId,
+      }));
+    }
     const res = await proxyFetch(`${base}/api/tags`, "GET", undefined, undefined, headers);
     if (!res.ok) throw new Error(`Ollama list error: ${res.status}`);
     const json = await res.json();
@@ -327,6 +381,36 @@ const OllamaAdapter: ProviderAdapter = {
   async streamCompletion(config, params) {
     const base = (config.baseUrl || OllamaAdapter.defaultBaseUrl).replace(/\/$/, "");
     const headers = config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : undefined;
+    if (isOllamaCloud(base)) {
+      const res = await proxyFetch(`${base}/chat/completions`, "POST", {
+        model: params.model,
+        messages: params.messages,
+        temperature: params.temperature ?? 0.7,
+        max_tokens: params.maxTokens,
+        stream: true,
+      }, params.signal, headers);
+      if (!res.ok) throw new Error(`Ollama error: ${res.status} ${await safeText(res)}`);
+      // Ollama Cloud may answer with an SSE stream, NDJSON, or a single JSON
+      // object. Route streamable content types through the (lenient) SSE
+      // parser; otherwise read the full body and synthesize a reply.
+      const ct = res.headers.get("content-type") || "";
+      if (ct.includes("event-stream") || ct.includes("ndjson") || ct.includes("text/plain")) {
+        return parseSSEStream(
+          res,
+          (data) => data.choices?.[0]?.delta?.content || data.message?.content || "",
+          // Ollama Cloud reasoning models stream thinking in delta.reasoning
+          // while delta.content is empty until the final answer; surface it
+          // as live thinking so the bubble is not silent during reasoning.
+          (data) => data.choices?.[0]?.delta?.reasoning || ""
+        );
+      }
+      const text = await res.text();
+      if (text.trim().startsWith("<")) {
+        throw new Error(`Ollama error: received HTML instead of JSON (check Base URL).`);
+      }
+      const content = extractJsonReply(text);
+      return singleChunkStream(content || `(empty response from ${params.model})`);
+    }
     const res = await proxyFetch(`${base}/api/chat`, "POST", {
       model: params.model,
       messages: toOllamaMessages(params.messages),
@@ -507,8 +591,17 @@ async function parseSSEStream(
 
       for (const line of lines) {
         const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith("data: ")) continue;
-        const dataStr = trimmed.slice(6);
+        if (!trimmed) continue;
+        // Accept "data: {...}", "data:{...}" (no space), bare "[DONE]", and
+        // raw NDJSON lines starting with "{" (Ollama Cloud streaming shape).
+        let dataStr = "";
+        if (trimmed.startsWith("data:")) {
+          dataStr = trimmed.slice(5).trimStart();
+        } else if (trimmed.startsWith("{")) {
+          dataStr = trimmed;
+        } else {
+          continue;
+        }
         if (dataStr === "[DONE]") {
           controller.enqueue({ delta: "", done: true });
           controller.close();
