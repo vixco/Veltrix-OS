@@ -8,7 +8,7 @@ import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { Copy, Check, Pencil, RefreshCw, FileText } from "lucide-react";
 import { useChatStore, useArtifactStore, type Message } from "@/lib/store";
 import { parseArtifactTags } from "@/lib/artifacts";
-import { ArtifactBubble } from "./artifact-bubble";
+import { ArtifactInline } from "./artifact-inline";
 import { formatBytes } from "@/lib/utils";
 import { ThinkingBlock } from "./thinking-block";
 
@@ -197,7 +197,9 @@ export function ChatMessage({
               </div>
             )}
 
-            {artifact && <ArtifactBubble artifact={artifact} onOpen={() => openPanel(artifact.id)} />}
+            {artifact && (
+              <ArtifactInline artifact={artifact} onOpenPanel={() => openPanel(artifact.id)} />
+            )}
 
             {afterArtifact.trim() && (
               <div className="prose-claude">
