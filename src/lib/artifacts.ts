@@ -2,7 +2,7 @@
 // Artifact Type System
 // ═══════════════════════════════════════════════
 
-export type ArtifactType = "document" | "comparison" | "code" | "planner";
+export type ArtifactType = "document" | "comparison" | "code" | "planner" | "design";
 
 export interface ArtifactSection {
   heading?: string;
@@ -93,6 +93,12 @@ Body text here.
 ]]>
 </artifact>
 
+<artifact type="design" title="..." language="html">
+<![CDATA[
+...full HTML with inline CSS for visual design...
+]]>
+</artifact>
+
 ## Rules
 1. ALWAYS use artifact tags when creating content — never dump raw markdown
 2. For simple questions or casual chat, just respond normally without artifacts
@@ -100,7 +106,9 @@ Body text here.
 4. You can add introductory text before an artifact
 5. For code artifacts, use CDATA blocks to preserve formatting
 6. Document sections can contain bullet lists (lines starting with -)
-7. Comparison scores are 0-10`;
+7. Comparison scores are 0-10
+8. For design artifacts, produce self-contained HTML with inline CSS
+9. Code and design artifacts use the same structure (language + CDATA code block)`;
 
 export function parseArtifactTags(text: string): {
   beforeArtifact: string;
@@ -136,7 +144,7 @@ export function parseArtifactTags(text: string): {
   const now = Date.now();
   let artifact: Artifact;
 
-  if (type === "code") {
+  if (type === "code" || type === "design") {
     const codeMatch = inner.match(/<!\[CDATA\[([\s\S]*?)\]\]>/);
     artifact = {
       id: generateId(),

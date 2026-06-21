@@ -24,7 +24,7 @@ export function Tooltip({
       {children}
       {show && (
         <div className={cn(
-          "absolute z-50 px-2 py-1 text-xs font-medium rounded-md bg-surface-3 border border-border text-foreground whitespace-nowrap pointer-events-none animate-fade-in",
+          "absolute z-50 px-2 py-1 text-xs font-medium rounded-md bg-surface-3 border border-border text-foreground whitespace-nowrap pointer-events-none animate-scale-in",
           sideClass[side]
         )}>
           {content}
@@ -60,7 +60,7 @@ export function DropdownMenu({
       {open && (
         <div
           className={cn(
-            "absolute z-50 mt-1 min-w-[200px] rounded-xl bg-surface-2 border border-border shadow-xl p-1.5 animate-fade-in",
+            "absolute z-50 mt-1 min-w-[200px] rounded-xl bg-surface-2 border border-border shadow-xl p-1.5 dropdown-in",
             align === "end" ? "right-0" : "left-0"
           )}
           onClick={() => setOpen(false)}

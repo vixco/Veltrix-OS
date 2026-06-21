@@ -5,19 +5,25 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
-import { Copy, Check, Pencil, RefreshCw } from "lucide-react";
+import { Copy, Check, Pencil, RefreshCw, FileText } from "lucide-react";
 import { useChatStore, useArtifactStore, type Message } from "@/lib/store";
 import { parseArtifactTags } from "@/lib/artifacts";
 import { ArtifactBubble } from "./artifact-bubble";
+import { formatBytes } from "@/lib/utils";
+import { ThinkingBlock } from "./thinking-block";
 
 export function ChatMessage({
   message,
   convId,
   onRegenerate,
+  onEditUser,
+  streaming,
 }: {
   message: Message;
   convId: string;
   onRegenerate?: () => void;
+  onEditUser?: (newText: string) => void;
+  streaming?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -46,13 +52,17 @@ export function ChatMessage({
   };
 
   const handleSaveEdit = () => {
-    updateMessage(convId, message.id, { content: editText });
     setEditing(false);
+    if (onEditUser) {
+      onEditUser(editText.trim());
+    } else {
+      updateMessage(convId, message.id, { content: editText });
+    }
   };
 
   if (isUser) {
     return (
-      <div className="group px-4 py-3">
+      <div className="group px-4 py-3 animate-slide-up">
         <div className="mx-auto w-full max-w-[768px]">
           {editing ? (
             <div className="space-y-2">
@@ -73,15 +83,36 @@ export function ChatMessage({
                 </button>
                 <button
                   onClick={handleSaveEdit}
-                  className="px-3.5 py-1.5 text-[13px] bg-accent text-accent-fg rounded-lg hover:bg-accent-hover"
+                  disabled={!editText.trim()}
+                  className="px-3.5 py-1.5 text-[13px] bg-accent text-accent-fg rounded-lg hover:bg-accent-hover disabled:opacity-40"
                 >
-                  Send
+                  {onEditUser ? "Save & resend" : "Save"}
                 </button>
               </div>
             </div>
           ) : (
             <div className="flex justify-end">
               <div className="max-w-[85%]">
+                {message.attachments && message.attachments.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-1.5 justify-end">
+                    {message.attachments.map((a) => (
+                      <div
+                        key={a.id}
+                        className="flex items-center gap-2 rounded-xl border border-border bg-surface px-2.5 py-1.5 max-w-[220px]"
+                      >
+                        {a.dataUrl ? (
+                          <img src={a.dataUrl} alt={a.filename} className="h-7 w-7 rounded object-cover shrink-0" />
+                        ) : (
+                          <FileText className="h-4 w-4 text-muted-fg shrink-0" />
+                        )}
+                        <div className="min-w-0">
+                          <p className="text-[12px] font-medium text-foreground truncate max-w-[140px]">{a.filename}</p>
+                          <p className="text-[10px] text-muted-fg">{formatBytes(a.size)}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="rounded-2xl bg-surface-2 px-4 py-2.5 text-[15px] leading-relaxed text-foreground whitespace-pre-wrap break-words">
                   {message.content}
                 </div>
@@ -109,7 +140,7 @@ export function ChatMessage({
   }
 
   return (
-    <div className="group px-4 py-4">
+    <div className="group px-4 py-4 animate-slide-up">
       <div className="mx-auto w-full max-w-[768px]">
         {message.error ? (
           <div className="rounded-xl bg-destructive/10 border border-destructive/20 px-4 py-3 text-[14px] text-destructive">
@@ -117,6 +148,14 @@ export function ChatMessage({
           </div>
         ) : (
           <div className="space-y-3">
+            {message.thinking && (
+              <ThinkingBlock
+                thinking={message.thinking}
+                thinkingMs={message.thinkingMs}
+                contentEmpty={message.content === ""}
+              />
+            )}
+
             {beforeArtifact.trim() && (
               <div className="prose-claude">
                 <ReactMarkdown
@@ -163,7 +202,11 @@ export function ChatMessage({
               </div>
             )}
 
-            {message.content === "" && (
+            {streaming && message.content && !beforeArtifact.includes("<artifact") && (
+              <span className="stream-caret inline-block align-text-bottom" aria-hidden="true" />
+            )}
+
+            {message.content === "" && !message.thinking && (
               <div className="flex items-center gap-1.5 py-1">
                 <span className="h-2 w-2 rounded-full bg-accent/70 animate-bounce" style={{ animationDelay: "0ms" }} />
                 <span className="h-2 w-2 rounded-full bg-accent/70 animate-bounce" style={{ animationDelay: "150ms" }} />

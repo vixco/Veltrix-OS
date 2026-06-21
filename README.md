@@ -4,6 +4,7 @@ A premium self-hosted AI operating system with artifact-based output, multi-prov
 
 ## Features
 
+- **No backend required** — runs fully standalone in the browser as a local guest, with optional cloud sync via PocketBase
 - **Claude-like chat** — streaming responses, message editing, regeneration, history
 - **Artifact System** — structured outputs instead of raw markdown:
   - 📄 **Document** — structured sections, headings, bullet lists
@@ -38,6 +39,15 @@ Open [http://localhost:3000](http://localhost:3000)
 4. Select model from the header dropdown
 
 All keys are stored locally in your browser (localStorage). Never sent to any server except the provider's API.
+
+## Local vs Cloud mode
+
+Veltrix OS works out of the box with **no server setup**. On first visit you enter as a local guest and everything (chats, artifacts, projects, provider keys) is stored in your browser's `localStorage`.
+
+- **Local (default)** — guest identity, all data stays on your device. Nothing leaves your machine except calls to the AI provider you configure.
+- **Cloud (optional)** — sign in with an account to sync projects and share artifacts across devices. Requires a PocketBase instance (`NEXT_PUBLIC_POCKETBASE_URL`). Sign out at any time to drop back to local mode.
+
+The "Continue without an account" button on the login screen skips auth entirely.
 
 ## Architecture
 

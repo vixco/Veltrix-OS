@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, GitCompare, Code2, CalendarClock, ChevronRight } from "lucide-react";
+import { FileText, GitCompare, Code2, CalendarClock, ChevronRight, Palette } from "lucide-react";
 import type { Artifact } from "@/lib/artifacts";
 import { cn } from "@/lib/utils";
 
@@ -9,6 +9,7 @@ const typeIcons = {
   comparison: GitCompare,
   code: Code2,
   planner: CalendarClock,
+  design: Palette,
 };
 
 const typeLabels = {
@@ -16,6 +17,7 @@ const typeLabels = {
   comparison: "Comparison",
   code: "Code",
   planner: "Planner",
+  design: "Design",
 };
 
 export function ArtifactBubble({
@@ -36,12 +38,14 @@ export function ArtifactBubble({
     preview = artifact.code?.slice(0, 80) || "";
   } else if (artifact.type === "planner" && artifact.plan?.length) {
     preview = `${artifact.plan.length} steps`;
+  } else if (artifact.type === "design") {
+    preview = artifact.code?.slice(0, 80) || "";
   }
 
   return (
     <button
       onClick={onOpen}
-      className="group relative w-full max-w-md overflow-hidden rounded-xl border border-border bg-surface hover:border-border-hover hover:bg-surface-2 transition-all text-left"
+      className="group relative w-full max-w-md overflow-hidden rounded-xl border border-border bg-surface hover:border-border-hover hover:bg-surface-2 hover:shadow-lg transition-all duration-200 hover:-translate-y-0.5 animate-slide-up text-left"
     >
       <div className="relative p-4">
         <div className="flex items-center gap-2.5 mb-2">

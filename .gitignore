@@ -8,3 +8,7 @@ build
 .DS_Store
 Thumbs.db
 next-env.d.ts
+# Build / test artifacts
+tsconfig.tsbuildinfo
+test-results
+playwright-report

@@ -5,16 +5,23 @@ import {
   Plus,
   Search,
   Trash2,
+  Download,
   Settings,
   PanelLeftClose,
   Sun,
   Moon,
   MessageSquare,
+  LogOut,
+  LogIn,
+  Folder,
 } from "lucide-react";
 import { useChatStore } from "@/lib/store";
 import { useTheme } from "@/lib/use-theme";
-import { cn } from "@/lib/utils";
+import { cn, downloadText, conversationToMarkdown } from "@/lib/utils";
 import { ClaudeLogo } from "./claude-logo";
+import { useAuthStore } from "@/lib/auth-store";
+import { useProjectStore } from "@/lib/project-store";
+import { useRouter } from "next/navigation";
 
 interface SidebarProps {
   onOpenSettings: () => void;
@@ -43,6 +50,9 @@ export function Sidebar({ onOpenSettings, collapsed, onToggleCollapse }: Sidebar
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const { theme, toggle } = useTheme();
+  const { user, signOut, mode } = useAuthStore();
+  const { projects, activeProjectId } = useProjectStore();
+  const router = useRouter();
 
   const filtered = useMemo(() => {
     const list = query
@@ -73,14 +83,14 @@ export function Sidebar({ onOpenSettings, collapsed, onToggleCollapse }: Sidebar
         <div className="flex items-center gap-0.5">
           <button
             onClick={() => createConversation()}
-            className="p-2 rounded-lg text-muted-fg hover:text-foreground hover:bg-surface-2 transition-colors"
+            className="p-2 rounded-lg text-muted-fg hover:text-foreground hover:bg-surface-2 transition-all duration-150 active:scale-90"
             title="New chat"
           >
             <Plus className="h-[18px] w-[18px]" />
           </button>
           <button
             onClick={onToggleCollapse}
-            className="p-2 rounded-lg text-muted-fg hover:text-foreground hover:bg-surface-2 transition-colors"
+            className="p-2 rounded-lg text-muted-fg hover:text-foreground hover:bg-surface-2 transition-all duration-150 active:scale-90"
             title="Close sidebar"
           >
             <PanelLeftClose className="h-[18px] w-[18px]" />
@@ -92,10 +102,24 @@ export function Sidebar({ onOpenSettings, collapsed, onToggleCollapse }: Sidebar
       <div className="px-3 pb-2">
         <button
           onClick={() => createConversation()}
-          className="w-full flex items-center gap-2.5 px-3 h-9 rounded-lg text-[13.5px] font-medium text-muted-fg hover:text-foreground hover:bg-surface-2 transition-colors"
+          className="group w-full flex items-center gap-2.5 px-3 h-9 rounded-lg text-[13.5px] font-medium text-muted-fg hover:text-foreground hover:bg-surface-2 transition-all duration-150 active:scale-[0.98]"
         >
-          <Plus className="h-4 w-4" />
+          <Plus className="h-4 w-4 transition-transform duration-200 group-hover:rotate-90" />
           New chat
+        </button>
+      </div>
+
+      {/* Projects link */}
+      <div className="px-3 pb-2">
+        <button
+          onClick={() => router.push("/projects")}
+          className="w-full flex items-center gap-2.5 px-3 h-8 rounded-lg text-[12.5px] font-medium text-muted-fg hover:text-foreground hover:bg-surface-2 transition-all duration-150 active:scale-[0.98]"
+        >
+          <Folder className="h-3.5 w-3.5" />
+          Projects
+          {projects.length > 0 && (
+            <span className="ml-auto text-[11px] text-muted-fg/60">{projects.length}</span>
+          )}
         </button>
       </div>
 
@@ -132,7 +156,7 @@ export function Sidebar({ onOpenSettings, collapsed, onToggleCollapse }: Sidebar
                     onMouseLeave={() => setHoverId(null)}
                     onClick={() => setActive(conv.id)}
                     className={cn(
-                      "group relative flex items-center gap-2 px-3 h-9 rounded-lg cursor-pointer transition-colors",
+                      "group relative flex items-center gap-2 px-3 h-9 rounded-lg cursor-pointer transition-all duration-150 hover:translate-x-0.5",
                       activeId === conv.id
                         ? "bg-surface-2 text-foreground"
                         : "text-muted-fg hover:text-foreground hover:bg-surface-2/60"
@@ -140,16 +164,33 @@ export function Sidebar({ onOpenSettings, collapsed, onToggleCollapse }: Sidebar
                   >
                     <p className="flex-1 min-w-0 text-[13px] truncate">{conv.title}</p>
                     {hoverId === conv.id && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteConversation(conv.id);
-                        }}
-                        className="p-1 -mr-1 rounded hover:bg-destructive/15 hover:text-destructive transition-colors"
-                        title="Delete"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      <div className="flex items-center -mr-1">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const md = conversationToMarkdown(conv.title, conv.messages);
+                            downloadText(
+                              `${conv.title.replace(/[^a-z0-9]+/gi, "-").slice(0, 50) || "chat"}.md`,
+                              md,
+                              "text/markdown"
+                            );
+                          }}
+                          className="p-1 rounded hover:bg-surface-3 hover:text-foreground transition-all duration-150 active:scale-90"
+                          title="Export as markdown"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteConversation(conv.id);
+                          }}
+                          className="p-1 rounded hover:bg-destructive/15 hover:text-destructive transition-all duration-150 active:scale-90"
+                          title="Delete"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     )}
                   </div>
                 ))}
@@ -163,18 +204,48 @@ export function Sidebar({ onOpenSettings, collapsed, onToggleCollapse }: Sidebar
       <div className="border-t border-border p-2 space-y-0.5">
         <button
           onClick={toggle}
-          className="w-full flex items-center gap-2.5 px-3 h-9 rounded-lg text-[13px] text-muted-fg hover:text-foreground hover:bg-surface-2 transition-colors"
+          className="w-full flex items-center gap-2.5 px-3 h-9 rounded-lg text-[13px] text-muted-fg hover:text-foreground hover:bg-surface-2 transition-all duration-150 active:scale-[0.98]"
         >
           {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           {theme === "dark" ? "Light mode" : "Dark mode"}
         </button>
         <button
           onClick={onOpenSettings}
-          className="w-full flex items-center gap-2.5 px-3 h-9 rounded-lg text-[13px] text-muted-fg hover:text-foreground hover:bg-surface-2 transition-colors"
+          className="w-full flex items-center gap-2.5 px-3 h-9 rounded-lg text-[13px] text-muted-fg hover:text-foreground hover:bg-surface-2 transition-all duration-150 active:scale-[0.98]"
         >
           <Settings className="h-4 w-4" />
           Provider settings
         </button>
+        {user && (
+          <div className="flex items-center gap-2.5 px-2 pt-2 mt-1 border-t border-border">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-accent-fg text-[12px] font-semibold uppercase">
+              {user.name.charAt(0)}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[12px] font-medium text-foreground truncate">{user.name}</p>
+              <p className="text-[11px] text-muted-fg truncate">
+                {mode === "cloud" ? user.email : "Local guest"}
+              </p>
+            </div>
+            {mode === "cloud" ? (
+              <button
+                onClick={signOut}
+                className="p-1.5 rounded-lg text-muted-fg hover:text-destructive hover:bg-destructive/10 transition-all duration-150 active:scale-90"
+                title="Sign out"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
+            ) : (
+              <button
+                onClick={() => router.push("/login")}
+                className="p-1.5 rounded-lg text-muted-fg hover:text-accent hover:bg-surface-2 transition-all duration-150 active:scale-90"
+                title="Sign in to sync"
+              >
+                <LogIn className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </aside>
   );

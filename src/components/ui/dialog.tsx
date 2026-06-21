@@ -18,12 +18,12 @@ export function Dialog({
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center">
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in"
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in transition-opacity"
         onClick={onClose}
       />
       <div
         className={cn(
-          "relative z-10 w-full max-w-lg rounded-2xl bg-surface border border-border shadow-2xl animate-slide-up",
+          "relative z-10 w-full max-w-lg rounded-2xl bg-surface border border-border shadow-2xl animate-pop-in",
           className
         )}
       >
