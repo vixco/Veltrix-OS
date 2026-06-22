@@ -24,6 +24,8 @@ import {
   Cpu
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { LANGUAGES, languageMeta } from "@/lib/i18n";
+import type { LanguageId } from "@/lib/preferences";
 
 // ═══════════════════════════════════════════════
 // Onboarding Translations
@@ -241,11 +243,12 @@ export function Onboarding({ onComplete }: { onComplete: (osModeByDefault: boole
   // Global stores
   const prefs = usePreferences();
   const providerStore = useProviderStore();
-  
+
   // States
   const [step, setStep] = useState(0);
+  const [languageId, setLanguageId] = useState<LanguageId>("en-US");
   const [lang, setLang] = useState<LangCode>("en");
-  
+
   // Step 1 states
   const [themeMode, setThemeMode] = useState<"light" | "dark" | "system">("dark");
   
@@ -279,11 +282,16 @@ export function Onboarding({ onComplete }: { onComplete: (osModeByDefault: boole
 
   // Auto-detect language on load
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const browserLang = navigator.language.toLowerCase();
-      if (browserLang.startsWith("nl")) {
-        setLang("nl");
-      }
+    if (typeof window === "undefined") return;
+    const browserLang = navigator.language.toLowerCase();
+    const matched =
+      LANGUAGES.find((l) => browserLang === l.tag.toLowerCase()) ||
+      LANGUAGES.find((l) => browserLang.startsWith(l.tag.split("-")[0].toLowerCase()));
+    if (matched) {
+      setLanguageId(matched.id);
+    }
+    if (browserLang.startsWith("nl")) {
+      setLang("nl");
     }
   }, []);
 
@@ -518,7 +526,7 @@ export function Onboarding({ onComplete }: { onComplete: (osModeByDefault: boole
 
   const handleFinish = () => {
     // 1. Save language
-    prefs.setLanguage("en-US");
+    prefs.setLanguage(languageId);
 
     // 2. Save theme preset
     prefs.setAppearance({
@@ -626,29 +634,29 @@ export function Onboarding({ onComplete }: { onComplete: (osModeByDefault: boole
                   <label className="text-xs font-semibold text-muted-fg uppercase tracking-wider flex items-center gap-1.5">
                     <Languages className="h-3.5 w-3.5" /> {t.select_lang}
                   </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => setLang("en")}
-                      className={cn(
-                        "py-3 rounded-lg border text-sm font-semibold transition-all duration-200 flex items-center justify-center gap-2",
-                        lang === "en"
-                          ? "bg-accent border-accent text-white shadow-md scale-[1.02]"
-                          : "bg-surface border-border hover:border-border-hover text-foreground"
-                      )}
-                    >
-                      🇬🇧 English
-                    </button>
-                    <button
-                      onClick={() => setLang("nl")}
-                      className={cn(
-                        "py-3 rounded-lg border text-sm font-semibold transition-all duration-200 flex items-center justify-center gap-2",
-                        lang === "nl"
-                          ? "bg-accent border-accent text-white shadow-md scale-[1.02]"
-                          : "bg-surface border-border hover:border-border-hover text-foreground"
-                      )}
-                    >
-                      🇳🇱 Nederlands
-                    </button>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-56 overflow-y-auto pr-1">
+                    {LANGUAGES.map((l) => {
+                      const active = languageId === l.id;
+                      return (
+                        <button
+                          key={l.id}
+                          onClick={() => {
+                            setLanguageId(l.id);
+                            if (l.id.startsWith("nl")) setLang("nl");
+                            else setLang("en");
+                          }}
+                          className={cn(
+                            "py-3 px-2 rounded-lg border text-sm font-semibold transition-all duration-200 flex items-center justify-center gap-2 text-center",
+                            active
+                              ? "bg-accent border-accent text-white shadow-md scale-[1.02]"
+                              : "bg-surface border-border hover:border-border-hover text-foreground"
+                          )}
+                          title={`${l.label} (${l.tag})`}
+                        >
+                          {l.label}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -1072,7 +1080,7 @@ export function Onboarding({ onComplete }: { onComplete: (osModeByDefault: boole
               <div className="max-w-md mx-auto bg-surface-2/40 border border-border/30 rounded-xl p-4 text-left space-y-2 text-xs text-muted-fg">
                 <div className="flex justify-between border-b border-border/20 pb-1.5">
                   <span className="font-semibold">{t.steps[0]}:</span>
-                  <span className="capitalize font-mono">{lang === "nl" ? "Nederlands" : "English"}</span>
+                  <span className="capitalize font-mono">{languageMeta(languageId).label}</span>
                 </div>
                 <div className="flex justify-between border-b border-border/20 pb-1.5">
                   <span className="font-semibold">{t.steps[1]}:</span>

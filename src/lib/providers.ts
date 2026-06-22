@@ -417,17 +417,17 @@ const OllamaAdapter: ProviderAdapter = {
       const content = extractJsonReply(text);
       return singleChunkStream(content || `(empty response from ${params.model})`);
     }
+    const options: Record<string, any> = { temperature: params.temperature ?? 0.7 };
+    if (params.maxTokens) options.num_predict = params.maxTokens;
+
     const res = await proxyFetch(`${base}/api/chat`, "POST", {
       model: params.model,
       messages: toOllamaMessages(params.messages),
       stream: true,
-      options: {
-        temperature: params.temperature ?? 0.7,
-        num_predict: params.maxTokens,
-      },
+      options,
     }, params.signal, headers);
     if (!res.ok) throw new Error(`Ollama error: ${res.status}`);
-    return parseNDJSONStream(res, (data) => data.message?.content || "");
+    return parseNDJSONStream(res, (data) => data.message?.content || data.message?.thinking || "");
   },
 };
 
