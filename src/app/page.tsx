@@ -1,30 +1,37 @@
-﻿"use client";
+"use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { PanelLeft, Plus, PenLine, Code2, GraduationCap, Lightbulb } from "lucide-react";
+import { PanelLeft, Plus, PenLine, Code2, GraduationCap, Lightbulb, Microscope, Cpu } from "lucide-react";
+import { DesktopEnv } from "@/components/desktop-env";
 import { Sidebar } from "@/components/sidebar";
 import { ChatMessage } from "@/components/chat-message";
 import { ChatInput } from "@/components/chat-input";
 import { ArtifactPanel } from "@/components/artifact-panel";
 import { SettingsPanel } from "@/components/settings-panel";
 import { NotificationToasts } from "@/components/notification-toasts";
+import { CommandPalette } from "@/components/command-palette";
 import { usePreferences } from "@/lib/preferences";
 import { notifyResponseComplete } from "@/lib/notifications";
 import { enabledCapabilities } from "@/lib/tools-catalog";
-import { useChatStore, useProviderStore, type Attachment } from "@/lib/store";
-import { getProvider, type ContentPart } from "@/lib/providers";
+import { useChatStore, useProviderStore } from "@/lib/store";
+import type { Attachment } from "@/lib/store";
+import { getProvider } from "@/lib/providers";
+import type { ContentPart } from "@/lib/providers";
 import { ARTIFACT_SYSTEM_PROMPT } from "@/lib/artifacts";
 import { buildMessageContent } from "@/lib/utils";
 import { ClaudeLogo } from "@/components/claude-logo";
 import { AuthGuard } from "@/components/auth-guard";
-import { MODES, type WorkMode } from "@/lib/modes";
+import { MODES } from "@/lib/modes";
+import type { WorkMode } from "@/lib/modes";
 import { useProjectStore } from "@/lib/project-store";
 import { useAuthStore } from "@/lib/auth-store";
 import { buildSystemPrompt } from "@/lib/persona";
 import { buildSelfContext, buildToolset, runAgentTurn } from "@/lib/agent";
 import { extractMemories, remember, connectNode, buildMemoryContext } from "@/lib/memory-engine";
 import { useMemoryStore } from "@/lib/memory-store";
+import { useAssistantStore } from "@/lib/assistant-store";
 import { Palette, Users } from "lucide-react";
+import { Onboarding } from "@/components/onboarding";
 
 const STYLE_DIRECTIVES: Record<string, string> = {
   buttery: "Warm and smooth. Easy, natural flow. Soft transitions between ideas. Friendly without being saccharine.",
@@ -43,10 +50,10 @@ function enhancedSystemBase(): string {
   if (caps.length) {
     parts.push("## Installed tools & skills\nYou have access to these capabilities: " + caps.join("; ") + ". Use them when they genuinely help.");
   }
-  if (!p.capabilities.artifacts || !p.capabilities.aiPoweredArtifacts) {
+  if (!p.capabilities?.artifacts || !p.capabilities?.aiPoweredArtifacts) {
     parts.push("Artifacts are currently disabled, so reply in plain text/markdown instead of producing interactive artifacts.");
   }
-  if (!p.capabilities.codeExecution) {
+  if (!p.capabilities?.codeExecution) {
     parts.push("Code execution is disabled; do not attempt to run code.");
   }
   if (p.profile.workDescription.trim()) {
@@ -61,12 +68,64 @@ function enhancedSystemBase(): string {
   }
   return parts.join("\n\n");
 }
+
+function shouldEnableWebSearchAutomatically(text: string): boolean {
+  const query = text.toLowerCase().trim();
+  
+  // 1. Mandatory keywords that always trigger search (sowieso)
+  const forceKeywords = [
+    "zoek op",
+    "zoek naar",
+    "search for",
+    "search on",
+    "google",
+    "wikipedia",
+    "look up",
+    "lookup",
+    "find info on",
+    "info over",
+    "nieuws over",
+    "news about",
+    "weather in",
+    "weer in",
+    "stock price",
+    "prijs van",
+    "koers van"
+  ];
+  
+  if (forceKeywords.some(kw => query.includes(kw))) {
+    return true;
+  }
+  
+  // 2. Question words combined with temporal or current indicators
+  const questionWords = ["wie", "wat", "waar", "hoe", "wanneer", "waarom", "who", "what", "where", "how", "when", "why"];
+  const currentIndicators = ["nu", "now", "vandaag", "today", "current", "actueel", "latest", "laatste", "recent", "nieuws", "news", "weer", "weather", "2026"];
+  
+  const hasQuestion = questionWords.some(w => query.startsWith(w + " ") || query.includes(" " + w + " "));
+  const hasCurrentIndicator = currentIndicators.some(i => query.includes(i));
+  
+  if (hasQuestion && hasCurrentIndicator) {
+    return true;
+  }
+  
+  // 3. Informational queries with temporal words
+  if (query.includes("latest news") || query.includes("laatste nieuws") || query.includes("weerbericht") || query.includes("weather forecast")) {
+    return true;
+  }
+  
+  return false;
+}
+
 export default function HomePage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<string | undefined>(undefined);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
   const [mode, setMode] = useState<WorkMode>("chat");
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [osModeEnabled, setOsModeEnabled] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const onboardingCompleted = usePreferences((s) => s.onboardingCompleted);
   const bottomRef = useRef<HTMLDivElement>(null);
   // Steering (Claude/Codex-style): submits while a generation is running are
   // appended to the history but do NOT interrupt the current stream. The
@@ -105,6 +164,14 @@ export default function HomePage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [activeConv?.messages]);
 
+  useEffect(() => {
+    setMounted(true);
+    const currentPrefs = usePreferences.getState();
+    if (currentPrefs.onboardingCompleted && currentPrefs.ultraAgentOsMode) {
+      setOsModeEnabled(true);
+    }
+  }, []);
+
   // Keyboard shortcuts: Esc stops generation, Cmd/Ctrl+Shift+O starts a new chat.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -115,20 +182,26 @@ export default function HomePage() {
         e.preventDefault();
         createConversation();
       }
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [isStreaming, abortController, createConversation]);
 
+
+
   // Shared streaming core. Streams a completion into `assistantMsgId` (which must
   // already exist as an empty assistant message) using the conversation history
   // provided. Reads fresh store state so it stays correct across rapid actions.
   const streamInto = useCallback(
-    async (convId: string, assistantMsgId: string, messages: { role: "system" | "user" | "assistant"; content: string | ContentPart[] }[]) => {
+    async (convId: string, assistantMsgId: string, messages: { role: "system" | "user" | "assistant"; content: string | ContentPart[] }[], prefix = "", forceWeb = false, assistantId?: string, maxIters = 8) => {
       setStreaming(true);
       const controller = new AbortController();
       setAbortController(controller);
-      let accumulated = "";
+      let accumulated = prefix;
       let thinking = "";
       let thinkingStart: number | null = null;
       let thinkingEnd: number | null = null;
@@ -141,9 +214,22 @@ export default function HomePage() {
           );
         }
         const __prefs = usePreferences.getState();
-        const __tools = buildToolset({
-          webAccess: !!__prefs.capabilities.webAccess,
-          hostAccess: !!__prefs.capabilities.hostAccess,
+        const __assistant = useAssistantStore.getState().get(assistantId);
+        const __caps = __assistant ? __assistant.capabilities : null;
+        const __web = !!(forceWeb || (__caps ? __caps.web : __prefs.capabilities?.webAccess ?? true));
+        const __host = !!(__caps ? __caps.host : __prefs.capabilities?.hostAccess ?? true);
+        const __browser = !!(__caps ? __caps.browser : __prefs.capabilities?.browserAccess ?? true);
+        const __image = __caps ? __caps.image : true;
+        const __github = __caps ? false : __prefs.tools.some((t) => t.id === "connector-github" && t.enabled);
+        const __composio = __caps ? false : __prefs.tools.some((t) => t.id === "connector-composio" && t.enabled);
+        const __tools = await buildToolset({
+          webAccess: __web,
+          hostAccess: __host,
+          browserAccess: __browser,
+          imageGen: __image,
+          github: __github,
+          composio: __composio,
+          composioApiKey: __prefs.composioApiKey,
         });
         // Self-awareness: append a fresh, accurate self-model to the system
         // prompt so Veltrix knows who it is, what it runs on, and which tools
@@ -153,32 +239,44 @@ export default function HomePage() {
           providerLabel: config.label,
           model: activeModel,
           tools: __tools,
-          hostAccess: !!__prefs.capabilities.hostAccess,
-          webAccess: !!__prefs.capabilities.webAccess,
+          hostAccess: __host,
+          webAccess: __web,
+          browserAccess: __browser,
         });
+        let __extra = "";
+        if (__assistant) {
+          __extra = "\n\n## Active assistant: " + __assistant.name + "\n" + (__assistant.systemPrompt.trim() ? __assistant.systemPrompt.trim() : "");
+          if (__assistant.knowledge.length) {
+            __extra += "\n\n## Knowledge for this assistant\n";
+            for (const k of __assistant.knowledge) __extra += "\n--- " + k.filename + " ---\n" + k.text + "\n";
+          }
+        }
         const __finalMessages = messages.map((m, i) =>
           i === 0 && m.role === "system" && typeof m.content === "string"
-            ? { ...m, content: (m.content as string) + "\n\n" + __self }
+            ? { ...m, content: (m.content as string) + "\n\n" + __self + __extra }
             : m
         );
 
-        await runAgentTurn({
+        const __turn = await runAgentTurn({
           messages: __finalMessages as any,
           tools: __tools,
           signal: controller.signal,
-          maxIterations: 8,
+          maxIterations: maxIters,
           hooks: {
             stream: (msgs, sig) =>
               adapter.streamCompletion(config, {
                 messages: msgs,
                 model: activeModel,
-                temperature: 0.7,
+                temperature: __prefs.capabilities?.temperature ?? 0.7,
+                maxTokens: __prefs.capabilities?.maxTokens || undefined,
                 signal: sig,
+                thinking: __prefs.capabilities?.thinkingMode ?? "auto",
+                thinkingBudget: __prefs.capabilities?.thinkingBudget ?? 4000,
               }),
             onContent: (full) => {
               if (thinkingStart !== null && thinkingEnd === null) thinkingEnd = Date.now();
-              accumulated = full;
-              updateMessage(convId, assistantMsgId, { content: full });
+              accumulated = prefix + full;
+              updateMessage(convId, assistantMsgId, { content: prefix + full });
             },
             onThinking: (full) => {
               if (thinkingStart === null) thinkingStart = Date.now();
@@ -187,6 +285,7 @@ export default function HomePage() {
             },
           },
         });
+        if (__turn.finishReason) updateMessage(convId, assistantMsgId, { finishReason: __turn.finishReason });
       } catch (err: any) {
         pendingTurnRef.current = null;
         if (err?.name === "AbortError") {
@@ -279,21 +378,27 @@ export default function HomePage() {
   // empty assistant message. Shared by the initial send and the steering
   // auto-continue path so behavior stays identical.
   const startAssistantTurn = useCallback(
-    async (convId: string) => {
+    async (convId: string, forceWeb = false) => {
+      const __research = mode === "research";
       const assistantMsgId = addMessage(convId, { role: "assistant", content: "" });
       const conv = useChatStore.getState().conversations.find((c) => c.id === convId);
       const history = (conv?.messages || []).filter((m) => m.id !== assistantMsgId);
       const __lastUser = [...history].reverse().find((m) => m.role === "user");
       const __query = typeof __lastUser?.content === "string" ? __lastUser.content : "";
+      
+      // Auto-detect web search requirement if not already forced
+      const webEnabled = forceWeb || shouldEnableWebSearchAutomatically(__query);
+      
       const __projectId = useProjectStore.getState().activeProjectId || "global";
       const __project = useProjectStore.getState().projects.find((p) => p.id === __projectId);
       const __memCtx = usePreferences.getState().memory.useContext ? buildMemoryContext(__query, __projectId, 600) : "";
-      const systemPrompt = buildSystemPrompt(enhancedSystemBase(), MODES[mode].systemPromptExtra, __project?.instructions || "", __memCtx);
+      let systemPrompt = buildSystemPrompt(enhancedSystemBase(), MODES[mode].systemPromptExtra, __project?.instructions || "", __memCtx);
+      if (webEnabled) systemPrompt += "\n\n## Web search\nThe user enabled web search for this message. Call web_search for current information about their request, fetch the most relevant result with web_fetch if needed, then answer with inline source citations as [Title](url).";
       const messages = [
         { role: "system" as const, content: systemPrompt },
         ...history.map((m) => ({ role: m.role as "user" | "assistant", content: m.role === "user" ? buildMessageContent(m.content, m.attachments) : m.content })),
       ];
-      await streamInto(convId, assistantMsgId, messages);
+      await streamInto(convId, assistantMsgId, messages, "", webEnabled || __research, conv?.assistantId ?? (useAssistantStore.getState().defaultAssistantId || undefined), __research ? 22 : 8);
       if (usePreferences.getState().memory.generateFromChat) harvestMemories(convId);
       // First exchange of a fresh chat: ask the model for a short title
       // instead of leaving the sidebar showing the raw first prompt.
@@ -315,6 +420,10 @@ export default function HomePage() {
     async (text: string, attachments?: Attachment[]) => {
       let convId = activeId;
       if (!convId) convId = createConversation();
+      
+      // Auto-detect if web search is needed
+      const forceWeb = shouldEnableWebSearchAutomatically(text);
+      
       addMessage(convId, { role: "user", content: text, attachments });
       // While a generation is running the submit becomes steering: the message
       // is appended to history but does NOT interrupt the in-flight stream. A
@@ -324,7 +433,7 @@ export default function HomePage() {
         pendingTurnRef.current = convId;
         return;
       }
-      await startAssistantTurn(convId);
+      await startAssistantTurn(convId, forceWeb);
     },
     [activeId, addMessage, createConversation, startAssistantTurn]
   );
@@ -339,6 +448,42 @@ export default function HomePage() {
       if (idx === -1) return;
       const history = conv.messages.slice(0, idx);
       updateMessage(convId, assistantMsgId, { content: "", thinking: "", thinkingMs: undefined, error: false });
+      const __assistantId = conv.assistantId;
+      const __lastUser = [...history].reverse().find((m) => m.role === "user");
+      const __query = typeof __lastUser?.content === "string" ? __lastUser.content : "";
+      
+      // Auto-detect if web search is needed for regeneration
+      const webEnabled = shouldEnableWebSearchAutomatically(__query);
+      
+      const __projectId = useProjectStore.getState().activeProjectId || "global";
+      const __project = useProjectStore.getState().projects.find((p) => p.id === __projectId);
+      const __memCtx = usePreferences.getState().memory.useContext ? buildMemoryContext(__query, __projectId, 600) : "";
+      let systemPrompt = buildSystemPrompt(enhancedSystemBase(), MODES[mode].systemPromptExtra, __project?.instructions || "", __memCtx);
+      if (webEnabled) systemPrompt += "\n\n## Web search\nThe user enabled web search for this message. Call web_search for current information about their request, fetch the most relevant result with web_fetch if needed, then answer with inline source citations as [Title](url).";
+      const messages = [
+        { role: "system" as const, content: systemPrompt },
+        ...history.map((m) => ({ role: m.role as "user" | "assistant", content: m.role === "user" ? buildMessageContent(m.content, m.attachments) : m.content })),
+      ];
+      await streamInto(convId, assistantMsgId, messages, "", webEnabled, conv?.assistantId ?? (useAssistantStore.getState().defaultAssistantId || undefined));
+      if (usePreferences.getState().memory.generateFromChat) harvestMemories(convId);
+    },
+    [mode, streamInto, updateMessage]
+  );
+
+  // Continue generating a truncated assistant reply in place. The existing
+  // partial answer is fed back as an assistant prefill so the model resumes
+  // exactly where it stopped; new tokens are appended to the same message.
+  const handleContinue = useCallback(
+    async (convId: string, assistantMsgId: string) => {
+      const conv = useChatStore.getState().conversations.find((c) => c.id === convId);
+      if (!conv) return;
+      const idx = conv.messages.findIndex((m) => m.id === assistantMsgId);
+      if (idx === -1) return;
+      const target = conv.messages[idx];
+      const existing = typeof target.content === "string" ? target.content : "";
+      if (!existing) return;
+      const history = conv.messages.slice(0, idx + 1); // include truncated assistant as prefill
+      updateMessage(convId, assistantMsgId, { finishReason: undefined });
       const __lastUser = [...history].reverse().find((m) => m.role === "user");
       const __query = typeof __lastUser?.content === "string" ? __lastUser.content : "";
       const __projectId = useProjectStore.getState().activeProjectId || "global";
@@ -349,7 +494,7 @@ export default function HomePage() {
         { role: "system" as const, content: systemPrompt },
         ...history.map((m) => ({ role: m.role as "user" | "assistant", content: m.role === "user" ? buildMessageContent(m.content, m.attachments) : m.content })),
       ];
-      await streamInto(convId, assistantMsgId, messages);
+      await streamInto(convId, assistantMsgId, messages, existing, false, conv.assistantId);
       if (usePreferences.getState().memory.generateFromChat) harvestMemories(convId);
     },
     [mode, streamInto, updateMessage]
@@ -376,7 +521,7 @@ export default function HomePage() {
         { role: "system" as const, content: systemPrompt },
         ...history.map((m) => ({ role: m.role as "user" | "assistant", content: m.role === "user" ? buildMessageContent(m.content, m.attachments) : m.content })),
       ];
-      await streamInto(convId, assistantMsgId, messages);
+      await streamInto(convId, assistantMsgId, messages, "", false, fresh?.assistantId);
       if (usePreferences.getState().memory.generateFromChat) harvestMemories(convId);
     },
     [mode, addMessage, streamInto, updateMessage, truncateAfter]
@@ -386,6 +531,32 @@ export default function HomePage() {
   const handleStop = useCallback(() => {
     abortController?.abort();
   }, [abortController]);
+
+  if (mounted && !onboardingCompleted) {
+    return (
+      <Onboarding
+        onComplete={(osModeByDefault) => {
+          if (osModeByDefault) {
+            setOsModeEnabled(true);
+          }
+        }}
+      />
+    );
+  }
+
+  if (osModeEnabled) {
+    return (
+      <AuthGuard>
+        <DesktopEnv
+          onClose={() => setOsModeEnabled(false)}
+          handleSend={handleSend}
+          handleStop={handleStop}
+          isStreaming={isStreaming}
+          activeConv={activeConv ?? null}
+        />
+      </AuthGuard>
+    );
+  }
 
   return (
     <AuthGuard>
@@ -399,23 +570,33 @@ export default function HomePage() {
       <div className="flex-1 flex min-w-0">
         {/* Chat column */}
         <div className="flex-1 flex flex-col min-w-0">
-          {sidebarCollapsed && (
-            <header className="flex items-center justify-between px-3 h-12 shrink-0">
+          <header className="flex items-center justify-between px-4 h-12 shrink-0 border-b border-border/40 bg-surface/30 backdrop-blur-md">
+            <div className="flex items-center gap-3">
+              {sidebarCollapsed && (
+                <button
+                  onClick={() => setSidebarCollapsed(false)}
+                  className="flex items-center justify-center h-8 w-8 rounded-lg text-muted-fg hover:text-foreground hover:bg-surface-2 transition-all duration-150 active:scale-90"
+                  title="Open sidebar"
+                >
+                  <PanelLeft className="h-[18px] w-[18px]" />
+                </button>
+              )}
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-foreground/80 tracking-wide">Veltrix Workspace</span>
+                <span className="text-[10px] font-mono bg-accent/15 border border-accent/20 px-2 py-0.5 rounded-full text-accent font-bold">ACTIVE</span>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2">
               <button
-                onClick={() => setSidebarCollapsed(false)}
-                className="flex items-center gap-2 px-2.5 h-8 rounded-lg text-muted-fg hover:text-foreground hover:bg-surface-2 transition-all duration-150 active:scale-90 text-[13px]"
+                onClick={() => setOsModeEnabled(true)}
+                className="flex items-center gap-2 px-3 h-8 rounded-lg bg-gradient-to-r from-accent to-accent-hover hover:shadow-[0_0_15px_rgba(198,97,63,0.3)] text-white text-xs font-bold transition-all press-spring shadow-sm"
               >
-                <PanelLeft className="h-[18px] w-[18px]" />
+                <Cpu className="h-3.5 w-3.5" />
+                <span>Launch OS Mode (Insane)</span>
               </button>
-              <button
-                onClick={() => createConversation()}
-                className="p-2 rounded-lg text-muted-fg hover:text-foreground hover:bg-surface-2 transition-all duration-150 active:scale-90"
-                title="New chat"
-              >
-                <Plus className="h-[18px] w-[18px]" />
-              </button>
-            </header>
-          )}
+            </div>
+          </header>
 
           {isEmpty ? (
             <div className="flex-1 flex flex-col justify-center px-4 pb-6">
@@ -434,6 +615,13 @@ export default function HomePage() {
                       onRegenerate={
                         msg.role === "assistant" && !isStreaming
                           ? () => handleRegenerate(activeConv!.id, msg.id)
+                          : undefined
+                      }
+                      onContinue={
+                        msg.role === "assistant" && !isStreaming &&
+                        i === activeConv!.messages.length - 1 &&
+                        (msg.finishReason === "length" || msg.finishReason === "max_tokens")
+                          ? () => handleContinue(activeConv!.id, msg.id)
                           : undefined
                       }
                       onEditUser={
@@ -461,6 +649,7 @@ export default function HomePage() {
 
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} initialTab={settingsTab} />
       <NotificationToasts />
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} mode={mode} onModeChange={setMode} onOpenSettings={(tab) => { setSettingsTab(tab); setSettingsOpen(true); }} />
     </div>
     </AuthGuard>
   );
@@ -554,6 +743,12 @@ const MODE_SUGGESTIONS: Record<WorkMode, { icon: typeof PenLine; title: string; 
     { icon: Users, title: "Review Doc", prompt: "Write a code review checklist for a TypeScript React pull request." },
     { icon: Users, title: "Architecture", prompt: "Create a system architecture diagram for a microservices-based web application." },
     { icon: Users, title: "Sprint Plan", prompt: "Create a 2-week sprint plan with user stories and acceptance criteria for a todo app." },
+  ],
+  research: [
+    { icon: Microscope, title: "Compare tools", prompt: "Research and compare the top open-source vector databases in 2025: features, performance, and licensing. Cite sources." },
+    { icon: Microscope, title: "State of a topic", prompt: "Research the current state of WebGPU adoption across major browsers in 2025 with sources." },
+    { icon: Microscope, title: "Deep dive", prompt: "Research how large language model context caching works across providers, with citations." },
+    { icon: Microscope, title: "Pros & cons", prompt: "Research the pros and cons of server-side SQLite vs Postgres for small apps in 2025. Cite sources." },
   ],
 };
 

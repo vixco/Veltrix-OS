@@ -9,12 +9,16 @@ import {
   PanelLeftClose,
   MessageSquare,
   Folder,
+  FolderOpen,
   Brain,
+  HardDrive,
+  Pin,
 } from "lucide-react";
 import { useChatStore } from "@/lib/store";
 import { cn, downloadText, conversationToMarkdown } from "@/lib/utils";
 import { ClaudeLogo } from "./claude-logo";
 import { UserMenu } from "./user-menu";
+import { AssistantPicker } from "./assistant-picker";
 import { useProjectStore } from "@/lib/project-store";
 import { useMemoryStore } from "@/lib/memory-store";
 import { useRouter } from "next/navigation";
@@ -45,6 +49,7 @@ export function Sidebar({ onOpenSettings, collapsed, onToggleCollapse }: Sidebar
   const createConversation = useChatStore((s) => s.createConversation);
   const setActive = useChatStore((s) => s.setActive);
   const deleteConversation = useChatStore((s) => s.deleteConversation);
+  const togglePin = useChatStore((s) => s.togglePin);
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -53,15 +58,22 @@ const memoryCount = useMemoryStore((s) => s.nodes.length);
   const router = useRouter();
 
   const filtered = useMemo(() => {
+    const q = query.toLowerCase();
     const list = query
-      ? conversations.filter((c) => c.title.toLowerCase().includes(query.toLowerCase()))
+      ? conversations.filter((c) => {
+          if (c.title.toLowerCase().includes(q)) return true;
+          return c.messages.some((m) => typeof m.content === "string" && m.content.toLowerCase().includes(q));
+        })
       : conversations;
     return [...list].sort((a, b) => b.updatedAt - a.updatedAt);
   }, [conversations, query]);
 
+  const pinnedList = useMemo(() => filtered.filter((c) => c.pinned), [filtered]);
+
   const groups = useMemo(() => {
     const map = new Map<string, typeof filtered>();
     for (const c of filtered) {
+      if (c.pinned) continue;
       const label = groupLabel(c.updatedAt);
       if (!map.has(label)) map.set(label, []);
       map.get(label)!.push(c);
@@ -120,6 +132,17 @@ const memoryCount = useMemoryStore((s) => s.nodes.length);
           )}
         </button>
       </div>
+      {/* Files (host desktop) link */}
+      <div className="px-3 pb-2">
+        <button
+          onClick={() => router.push("/files")}
+          className="w-full flex items-center gap-2.5 px-3 h-8 rounded-lg text-[12.5px] font-medium text-muted-fg hover:text-foreground hover:bg-surface-2 transition-all duration-150 active:scale-[0.98]"
+        >
+          <HardDrive className="h-3.5 w-3.5" />
+          Files
+        </button>
+      </div>
+
 
       {/* Memory link */}
       <div className="px-3 pb-2">
@@ -134,6 +157,7 @@ const memoryCount = useMemoryStore((s) => s.nodes.length);
           )}
         </button>
       </div>
+      <AssistantPicker />
       {/* Search */}
       <div className="px-3 pb-2">
         <div className="relative">
@@ -149,6 +173,40 @@ const memoryCount = useMemoryStore((s) => s.nodes.length);
 
       {/* Conversations */}
       <div className="flex-1 overflow-y-auto px-2 pb-2">
+        {pinnedList.length > 0 && (
+          <div className="mb-3">
+            <div className="px-3 py-1.5 text-[11px] font-medium text-muted-fg/70 flex items-center gap-1"><Pin className="h-3 w-3" />Pinned</div>
+            <div className="space-y-0.5">
+              {pinnedList.map((conv) => {
+                const active = activeId === conv.id;
+                return (
+                  <div
+                    key={conv.id}
+                    onMouseEnter={() => setHoverId(conv.id)}
+                    onMouseLeave={() => setHoverId(null)}
+                    onClick={() => setActive(conv.id)}
+                    className={cn(
+                      "group relative flex items-center gap-2 px-3 h-9 rounded-lg cursor-pointer transition-all duration-150 hover:translate-x-0.5",
+                      active ? "bg-surface-2 text-foreground" : "text-muted-fg hover:text-foreground hover:bg-surface-2/60"
+                    )}
+                  >
+                    <Pin className="h-3 w-3 text-accent shrink-0" fill="currentColor" />
+                    <p className="flex-1 min-w-0 text-[13px] truncate">{conv.title}</p>
+                    {hoverId === conv.id && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); togglePin(conv.id); }}
+                        className="p-1 rounded hover:bg-surface-3 hover:text-foreground transition-all duration-150 active:scale-90"
+                        title="Unpin"
+                      >
+                        <Pin className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
         {filtered.length === 0 ? (
           <div className="px-4 py-10 text-center">
             <MessageSquare className="h-7 w-7 text-muted-fg/30 mx-auto mb-3" />
@@ -176,6 +234,13 @@ const memoryCount = useMemoryStore((s) => s.nodes.length);
                     <p className="flex-1 min-w-0 text-[13px] truncate">{conv.title}</p>
                     {hoverId === conv.id && (
                       <div className="flex items-center -mr-1">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); togglePin(conv.id); }}
+                          className="p-1 rounded hover:bg-surface-3 hover:text-foreground transition-all duration-150 active:scale-90"
+                          title={conv.pinned ? "Unpin" : "Pin"}
+                        >
+                          <Pin className="h-3.5 w-3.5" fill={conv.pinned ? "currentColor" : "none"} />
+                        </button>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();

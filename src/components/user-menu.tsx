@@ -2,12 +2,13 @@
 
 import * as React from "react";
 import * as Popover from "@radix-ui/react-popover";
-import { Settings, Globe, ChevronRight, LogOut, LogIn, Check } from "lucide-react";
+import { Settings, Globe, ChevronRight, LogOut, LogIn, Check, Download } from "lucide-react";
 import { usePreferences, firstName } from "@/lib/preferences";
 import { useAuthStore } from "@/lib/auth-store";
 import { LANGUAGES, languageMeta, t } from "@/lib/i18n";
 import { Avatar } from "./avatar";
 import { cn } from "@/lib/utils";
+import { exportAllData } from "@/lib/export-data";
 import { useRouter } from "next/navigation";
 
 interface UserMenuProps {
@@ -68,6 +69,14 @@ export function UserMenu({ onOpenSettings }: UserMenuProps) {
           >
             <Settings className="h-4 w-4" />
             {t("menu.settings", language)}
+          </button>
+
+          <button
+            onClick={() => { exportAllData(); setOpen(false); }}
+            className="w-full flex items-center gap-2.5 px-2.5 h-9 rounded-lg text-[13px] text-muted-fg hover:text-foreground hover:bg-surface-2 transition-colors"
+          >
+            <Download className="h-4 w-4" />
+            Export data
           </button>
 
           {/* Language with inline submenu */}

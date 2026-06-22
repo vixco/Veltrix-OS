@@ -1,12 +1,13 @@
 ﻿"use client";
 
-import { FileText, GitCompare, Code2, CalendarClock, Palette, Maximize2 } from "lucide-react";
+import { FileText, GitCompare, Code2, CalendarClock, Palette, Maximize2, ImageIcon } from "lucide-react";
 import type { Artifact } from "@/lib/artifacts";
 import { ArtifactDocument } from "./artifacts/artifact-document";
 import { ArtifactComparison } from "./artifacts/artifact-comparison";
 import { ArtifactCode } from "./artifacts/artifact-code";
 import { ArtifactPlanner } from "./artifacts/artifact-planner";
 import { ArtifactDesign } from "./artifacts/artifact-design";
+import { ArtifactImage } from "./artifacts/artifact-image";
 
 const typeIcons = {
   document: FileText,
@@ -14,6 +15,7 @@ const typeIcons = {
   code: Code2,
   planner: CalendarClock,
   design: Palette,
+  image: ImageIcon,
 };
 
 const typeLabels = {
@@ -22,6 +24,7 @@ const typeLabels = {
   code: "Code",
   planner: "Planner",
   design: "Design",
+  image: "Image",
 };
 
 // Renders an artifact's rich UI directly inside the chat stream (like
@@ -37,7 +40,7 @@ export function ArtifactInline({
   const Icon = typeIcons[artifact.type];
   // Code/design artifacts can be tall; cap them and scroll. Plans, documents
   // and comparisons read best inline without an aggressive height cap.
-  const tall = artifact.type === "code" || artifact.type === "design";
+  const tall = artifact.type === "code" || artifact.type === "design" || artifact.type === "image";
 
   return (
     <div className="rounded-2xl border border-border bg-surface overflow-hidden animate-slide-up shadow-sm">

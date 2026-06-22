@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, GitCompare, Code2, CalendarClock, Palette } from "lucide-react";
+import { FileText, GitCompare, Code2, CalendarClock, Palette, ImageIcon } from "lucide-react";
 import type { ArtifactType } from "@/lib/artifacts";
 
 const typeIcons: Record<ArtifactType, typeof FileText> = {
@@ -9,6 +9,7 @@ const typeIcons: Record<ArtifactType, typeof FileText> = {
   code: Code2,
   planner: CalendarClock,
   design: Palette,
+  image: ImageIcon,
 };
 
 const typeLabels: Record<ArtifactType, string> = {
@@ -17,6 +18,7 @@ const typeLabels: Record<ArtifactType, string> = {
   code: "Code",
   planner: "Planner",
   design: "Design",
+  image: "Image",
 };
 
 // Shown while an artifact is still streaming in (its opening tag has

@@ -146,6 +146,7 @@ export interface Message {
   content: string;
   createdAt: number;
   artifactId?: string;
+  artifactIds?: string[];
   editing?: boolean;
   error?: boolean;
   attachments?: Attachment[];
@@ -153,6 +154,8 @@ export interface Message {
   thinking?: string;
   /** Wall-clock duration of the thinking phase, in ms. */
   thinkingMs?: number;
+  /** Provider stop reason ("length" / "max_tokens" = truncated, allows "Continue generating"). */
+  finishReason?: string;
 }
 
 export interface Conversation {
@@ -163,6 +166,9 @@ export interface Conversation {
   model: string;
   createdAt: number;
   updatedAt: number;
+  pinned?: boolean;
+  /** Custom assistant (GPT) applied to this chat, if any. */
+  assistantId?: string;
 }
 
 interface ChatState {
@@ -179,6 +185,8 @@ interface ChatState {
   truncateAfter: (convId: string, msgId: string) => void;
   setStreaming: (v: boolean) => void;
   renameConversation: (id: string, title: string) => void;
+  togglePin: (id: string) => void;
+  setConversationAssistant: (id: string, assistantId: string | null) => void;
   getActive: () => Conversation | null;
 }
 
@@ -281,6 +289,18 @@ export const useChatStore = create<ChatState>()(
         set((state) => ({
           conversations: state.conversations.map((c) =>
             c.id === id ? { ...c, title } : c
+          ),
+        })),
+      togglePin: (id) =>
+        set((state) => ({
+          conversations: state.conversations.map((c) =>
+            c.id === id ? { ...c, pinned: !c.pinned } : c
+          ),
+        })),
+      setConversationAssistant: (id, assistantId) =>
+        set((state) => ({
+          conversations: state.conversations.map((c) =>
+            c.id === id ? { ...c, assistantId: assistantId || undefined } : c
           ),
         })),
       getActive: () => {

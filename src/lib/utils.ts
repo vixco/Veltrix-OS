@@ -146,6 +146,33 @@ export function decodeArtifactFromHash(hash: string): import("./artifacts").Arti
 }
 
 /** Read a user-selected file into an Attachment (text inlined, images as data URLs). */
+// Extract text from a PDF entirely client-side. pdfjs is loaded lazily from a
+// CDN at runtime (the dynamic import is hidden from the bundler so it never
+// enters the Next bundle), with a matching worker version. Falls back to ""
+// on any failure so the caller can attach metadata only.
+const PDFJS_CDN = "https://unpkg".concat(".com/pdfjs-dist@4.8.69/build");
+async function extractPdfText(file: File): Promise<string> {
+  try {
+    const dynImport = new Function("u", "return import(u)") as (u: string) => Promise<any>;
+    const pdfjs: any = await dynImport(PDFJS_CDN + "/pdf.min.mjs");
+    pdfjs.GlobalWorkerOptions.workerSrc = PDFJS_CDN + "/pdf.worker.min.mjs";
+    const data = new Uint8Array(await file.arrayBuffer());
+    const doc = await pdfjs.getDocument({ data, useSystemCode: false }).promise;
+    const maxPages = Math.min(doc.numPages, 200);
+    let out = "";
+    for (let i = 1; i <= maxPages; i++) {
+      const page = await doc.getPage(i);
+      const content = await page.getTextContent();
+      out += content.items.map((it: any) => it.str).filter(Boolean).join(" ") + "\n\n";
+      if (out.length > 256 * 1024) break;
+    }
+    try { await doc.destroy(); } catch {}
+    return out.slice(0, 256 * 1024).trim();
+  } catch {
+    return "";
+  }
+}
+
 export async function readFileAsAttachment(file: File): Promise<import("./store").Attachment> {
   const id = Math.random().toString(36).slice(2) + Date.now().toString(36);
   const base = { id, filename: file.name, mimeType: file.type || "application/octet-stream", size: file.size };
@@ -163,6 +190,11 @@ export async function readFileAsAttachment(file: File): Promise<import("./store"
   if (textish && file.size <= 256 * 1024) {
     const text = await file.text();
     return { ...base, text };
+  }
+  // PDF: extract text client-side via pdfjs (up to 8MB).
+  if ((file.type === "application/pdf" || /\.pdf$/i.test(file.name)) && file.size <= 8 * 1024 * 1024) {
+    const text = await extractPdfText(file);
+    if (text) return { ...base, text };
   }
   // Binary / too-large: attach metadata only (no inlining).
   return base;

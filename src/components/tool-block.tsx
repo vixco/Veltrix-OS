@@ -1,11 +1,11 @@
 ﻿"use client";
 
-import React from "react";
+import React, { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
-import { Search, Globe, Terminal, FileText, Wrench, CheckCircle2, XCircle, ChevronRight } from "lucide-react";
+import { Search, Globe, Terminal, FileText, Wrench, CheckCircle2, XCircle, ChevronRight, Copy, Check } from "lucide-react";
 
 // Splits assistant text into prose segments and ```tool_call / ```tool_result
 // fenced blocks so we can render tool activity as compact event cards instead
@@ -48,6 +48,7 @@ function iconFor(name: string) {
   if (name === "web_fetch") return Globe;
   if (name === "host_exec") return Terminal;
   if (name === "host_fs") return FileText;
+  if (name === "image_gen") return Wrench;
   return Wrench;
 }
 
@@ -84,7 +85,7 @@ function ToolResultCard({ name, ok, output }: { name: string; ok: boolean; outpu
   const Icon = iconFor(name);
   const summary = summarizeResult(output);
   const tooLong = summary.length > 700;
-  const preview = tooLong ? summary.slice(0, 700) + "…" : summary;
+  const preview = tooLong ? summary.slice(0, 700) + "..." : summary;
   return (
     <details className="my-2.5 rounded-xl border border-border bg-surface-2/40 group">
       <summary className="flex items-center gap-2 px-3 py-2 cursor-pointer list-none select-none">
@@ -97,13 +98,45 @@ function ToolResultCard({ name, ok, output }: { name: string; ok: boolean; outpu
           <XCircle className="h-3.5 w-3.5 text-rose-500 shrink-0" />
         )}
         <span className="text-[11px] text-muted-fg truncate flex-1 ml-1">
-          {ok ? "result" : "failed"} — {typeof output === "string" ? output.slice(0, 80) : preview.split("\n")[0]?.slice(0, 80) || ""}
+          {ok ? "result" : "failed"} - {typeof output === "string" ? output.slice(0, 80) : preview.split("\n")[0]?.slice(0, 80) || ""}
         </span>
       </summary>
       <pre className="px-3 pb-3 pt-1 text-[11.5px] text-muted-fg whitespace-pre-wrap break-words font-mono max-h-[320px] overflow-auto">
         {preview}
       </pre>
     </details>
+  );
+}
+
+function CodeBlock({ language, value }: { language: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    navigator.clipboard.writeText(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <div className="group/code relative my-3 rounded-xl overflow-hidden border border-border bg-[#14130f]">
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-border/60 bg-surface-2/40">
+        <span className="text-[11px] font-medium text-muted-fg uppercase tracking-wide">{language || "code"}</span>
+        <button
+          onClick={handleCopy}
+          className="flex items-center gap-1 text-[11px] text-muted-fg hover:text-foreground transition-colors"
+          title="Copy code"
+        >
+          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      <SyntaxHighlighter
+        language={language}
+        style={oneDark}
+        PreTag="div"
+        customStyle={{ margin: 0, background: "transparent", padding: "12px 14px", fontSize: "13.5px" }}
+      >
+        {value}
+      </SyntaxHighlighter>
+    </div>
   );
 }
 
@@ -117,16 +150,7 @@ function Markdown({ text }: { text: string }) {
             const match = /language-(\w+)/.exec(className || "");
             const inline = !match;
             if (!inline && match) {
-              return (
-                <SyntaxHighlighter
-                  language={match[1]}
-                  style={oneDark}
-                  PreTag="div"
-                  customStyle={{ margin: 0, background: "transparent", padding: 0, fontSize: "13.5px" }}
-                >
-                  {String(children).replace(/\n$/, "")}
-                </SyntaxHighlighter>
-              );
+              return <CodeBlock language={match[1]} value={String(children).replace(/\n$/, "")} />;
             }
             return (
               <code className={className} {...props}>

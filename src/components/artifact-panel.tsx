@@ -10,6 +10,7 @@ import { ArtifactComparison } from "./artifacts/artifact-comparison";
 import { ArtifactCode } from "./artifacts/artifact-code";
 import { ArtifactPlanner } from "./artifacts/artifact-planner";
 import { ArtifactDesign } from "./artifacts/artifact-design";
+import { ArtifactImage } from "./artifacts/artifact-image";
 import { CoworkPanel } from "./cowork-panel";
 
 export function ArtifactPanel() {
@@ -25,7 +26,26 @@ export function ArtifactPanel() {
   const artifact = artifacts[activeArtifactId];
   if (!artifact) return null;
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
+    if (artifact.type === "image" && artifact.imageUrl) {
+      try {
+        const res = await fetch(artifact.imageUrl);
+        const blob = await res.blob();
+        const objUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = objUrl;
+        const slug = (artifact.title || "image").replace(/[^a-z0-9]+/gi, "-").slice(0, 50) || "image";
+        a.download = slug + ".png";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(objUrl);
+        return;
+      } catch {
+        window.open(artifact.imageUrl, "_blank");
+        return;
+      }
+    }
     const { filename, content, mime } = artifactToDownload(artifact);
     downloadText(filename, content, mime);
   };

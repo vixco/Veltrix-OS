@@ -1,25 +1,30 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Copy, Check, Pencil, RefreshCw, FileText } from "lucide-react";
-import { useChatStore, useArtifactStore, type Message } from "@/lib/store";
-import { parseArtifactTags } from "@/lib/artifacts";
+import { Copy, Check, Pencil, RefreshCw, FileText, ChevronsRight, Volume2, Square } from "lucide-react";
+import { useChatStore, useArtifactStore } from "@/lib/store";
+import type { Message } from "@/lib/store";
+import { parseMessageContent } from "@/lib/artifacts";
+import type { MessageBlock, Artifact } from "@/lib/artifacts";
 import { ArtifactInline } from "./artifact-inline";
 import { ArtifactCreating } from "./artifact-creating";
 import { formatBytes } from "@/lib/utils";
 import { ThinkingBlock } from "./thinking-block";
+import { useSpeechStore, speak, stopSpeaking, isSpeechSupported } from "@/lib/speech";
 import { RichText } from "./tool-block";
 
 export function ChatMessage({
   message,
   convId,
   onRegenerate,
+  onContinue,
   onEditUser,
   streaming,
 }: {
   message: Message;
   convId: string;
   onRegenerate?: () => void;
+  onContinue?: () => void;
   onEditUser?: (newText: string) => void;
   streaming?: boolean;
 }) {
@@ -28,23 +33,37 @@ export function ChatMessage({
   const [editText, setEditText] = useState(message.content);
   const updateMessage = useChatStore((s) => s.updateMessage);
   const openPanel = useArtifactStore((s) => s.openPanel);
+  const speakingId = useSpeechStore((s) => s.speakingId);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const isUser = message.role === "user";
 
-  const { beforeArtifact, artifact, afterArtifact, artifactInProgress } = !isUser
-    ? parseArtifactTags(message.content)
-    : { beforeArtifact: message.content, artifact: null, afterArtifact: "", artifactInProgress: null };
+  const blocks: MessageBlock[] = !isUser
+    ? parseMessageContent(message.content)
+    : [{ type: "text", content: message.content }];
 
-  // Register a parsed artifact once per (stable) artifact id. Depend on the
-  // id string rather than the `artifact` object, which is a fresh reference
-  // every render and would otherwise retrigger this effect constantly.
+  const artifacts = blocks
+    .filter((b) => b.type === "artifact")
+    .map((b) => (b as any).artifact as Artifact);
+
+  const artifactIdsString = artifacts.map((a) => a.id).join(",");
+
+  // Register all parsed artifacts once per stable artifact id.
   useEffect(() => {
-    if (artifact && message.artifactId !== artifact.id) {
-      useArtifactStore.getState().setArtifact(artifact);
-      updateMessage(convId, message.id, { artifactId: artifact.id });
+    const currentIds = message.artifactIds || (message.artifactId ? [message.artifactId] : []);
+    const hasDiff = currentIds.length !== artifacts.length ||
+      artifacts.some((a) => !currentIds.includes(a.id));
+
+    if (hasDiff && artifacts.length > 0) {
+      for (const art of artifacts) {
+        useArtifactStore.getState().setArtifact(art);
+      }
+      updateMessage(convId, message.id, {
+        artifactId: artifacts[0].id, // for backward compatibility
+        artifactIds: artifacts.map((a) => a.id),
+      });
     }
-  }, [artifact?.id, message.artifactId, convId, message.id, updateMessage]);
+  }, [artifactIdsString, message.artifactIds, message.artifactId, convId, message.id, updateMessage]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(message.content);
@@ -157,21 +176,38 @@ export function ChatMessage({
               />
             )}
 
-            {beforeArtifact.trim() && <RichText text={beforeArtifact} />}
-
-            {artifact && (
-              <ArtifactInline artifact={artifact} onOpenPanel={() => openPanel(artifact.id)} />
-            )}
-
-            {artifactInProgress && !artifact && (
-              <ArtifactCreating type={artifactInProgress.type} title={artifactInProgress.title} />
-            )}
-
-            {afterArtifact.trim() && !artifactInProgress && <RichText text={afterArtifact} />}
-
-            {streaming && message.content && !beforeArtifact.includes("<artifact") && !artifactInProgress && (
-              <span className="stream-caret inline-block align-text-bottom" aria-hidden="true" />
-            )}
+            {blocks.map((block, idx) => {
+              if (block.type === "text") {
+                const isLast = idx === blocks.length - 1;
+                return (
+                  <div key={idx} className="relative">
+                    <RichText text={block.content} />
+                    {streaming && isLast && (
+                      <span className="stream-caret inline-block align-text-bottom" aria-hidden="true" />
+                    )}
+                  </div>
+                );
+              }
+              if (block.type === "artifact") {
+                return (
+                  <ArtifactInline
+                    key={block.artifact.id}
+                    artifact={block.artifact}
+                    onOpenPanel={() => openPanel(block.artifact.id)}
+                  />
+                );
+              }
+              if (block.type === "artifactInProgress") {
+                return (
+                  <ArtifactCreating
+                    key={`${block.artifactType}-${block.title}`}
+                    type={block.artifactType}
+                    title={block.title}
+                  />
+                );
+              }
+              return null;
+            })}
 
             {message.content === "" && !message.thinking && (
               <div className="flex items-center gap-1.5 py-1">
@@ -189,6 +225,16 @@ export function ChatMessage({
               onClick={handleCopy}
               icon={copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
             />
+            {isSpeechSupported() && (
+              <ActionBtn
+                onClick={() => (speakingId === message.id ? stopSpeaking() : speak(typeof message.content === "string" ? message.content : "", message.id))}
+                icon={speakingId === message.id ? <Square className="h-3.5 w-3.5" fill="currentColor" /> : <Volume2 className="h-3.5 w-3.5" />}
+                label={speakingId === message.id ? "Stop" : "Read aloud"}
+              />
+            )}
+            {onContinue && (
+              <ActionBtn onClick={onContinue} icon={<ChevronsRight className="h-3.5 w-3.5" />} label="Continue" />
+            )}
             {onRegenerate && (
               <ActionBtn onClick={onRegenerate} icon={<RefreshCw className="h-3.5 w-3.5" />} />
             )}

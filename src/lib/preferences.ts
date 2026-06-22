@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
@@ -91,9 +91,19 @@ export interface ModelCapabilityPrefs {
   webAccess: boolean;
   /** Allow Veltrix to run shell commands and read/write files on the host machine. */
   hostAccess: boolean;
+  /** Allow Veltrix to drive a real headless Chromium browser live (navigate, click, type, screenshot). */
+  browserAccess: boolean;
   /** Provider used when no explicit per-chat provider is chosen. */
   defaultProvider: string;
   defaultModel: string;
+  /** Extended thinking control: "auto" = per-model default, "on" = force on, "off" = force off (saves tokens). */
+  thinkingMode: "auto" | "on" | "off";
+  /** Thinking budget in tokens for Anthropic extended thinking. */
+  thinkingBudget: number;
+  /** Sampling temperature (0-2). Applied to all providers that support it. */
+  temperature: number;
+  /** Max output tokens per response (0 = provider default / auto). */
+  maxTokens: number;
 }
 
 export interface ToolInstall {
@@ -125,6 +135,16 @@ interface PreferencesState {
   setCapabilities: (c: Partial<ModelCapabilityPrefs>) => void;
   setToolEnabled: (id: string, enabled: boolean) => void;
   resetAll: () => void;
+  onboardingCompleted: boolean;
+  workspacePath: string;
+  ollamaPath: string;
+  ultraAgentOsMode: boolean;
+  composioApiKey: string;
+  setOnboardingCompleted: (completed: boolean) => void;
+  setWorkspacePath: (path: string) => void;
+  setOllamaPath: (path: string) => void;
+  setUltraAgentOsMode: (enabled: boolean) => void;
+  setComposioApiKey: (key: string) => void;
 }
 
 const AVATAR_STYLES: AvatarConfig["style"][] = ["bottts", "shapes", "rings", "identicon", "blocks"];
@@ -168,7 +188,7 @@ const defaultAppearance: AppearancePrefs = {
 };
 
 export const usePreferences = create<PreferencesState>()(
-  persist(
+  persist<PreferencesState>(
     (set) => ({
       profile: defaultProfile,
       appearance: defaultAppearance,
@@ -184,10 +204,26 @@ export const usePreferences = create<PreferencesState>()(
         allowNetwork: false,
         webAccess: true,
         hostAccess: true,
+        browserAccess: true,
         defaultProvider: "ollama",
         defaultModel: "",
+        thinkingMode: "auto",
+        thinkingBudget: 4000,
+        temperature: 0.7,
+        maxTokens: 0,
       },
       tools: [],
+      onboardingCompleted: false,
+      workspacePath: "",
+      ollamaPath: "",
+      ultraAgentOsMode: false,
+      composioApiKey: "",
+
+      setOnboardingCompleted: (completed) => set({ onboardingCompleted: completed }),
+      setWorkspacePath: (path) => set({ workspacePath: path }),
+      setOllamaPath: (path) => set({ ollamaPath: path }),
+      setUltraAgentOsMode: (enabled) => set({ ultraAgentOsMode: enabled }),
+      setComposioApiKey: (key) => set({ composioApiKey: key }),
 
       setProfile: (p) => set((s) => ({ profile: { ...s.profile, ...p } })),
       setAvatar: (a) => set((s) => ({ profile: { ...s.profile, avatar: { ...s.profile.avatar, ...a } } })),
@@ -221,15 +257,58 @@ export const usePreferences = create<PreferencesState>()(
             aiPoweredArtifacts: true,
             codeExecution: true,
             allowNetwork: false,
-        webAccess: true,
-        hostAccess: true,
+            webAccess: true,
+            hostAccess: true,
+            browserAccess: true,
             defaultProvider: "ollama",
             defaultModel: "",
+            thinkingMode: "auto",
+            thinkingBudget: 4000,
+            temperature: 0.7,
+            maxTokens: 0,
           },
           tools: [],
+          onboardingCompleted: false,
+          workspacePath: "",
+          ollamaPath: "",
+          ultraAgentOsMode: false,
+          composioApiKey: "",
         }),
     }),
-    { name: "veltrix-preferences" }
+    {
+      name: "veltrix-preferences",
+      merge: (persistedState: any, currentState: PreferencesState): PreferencesState => {
+        if (!persistedState) return currentState;
+        return {
+          ...currentState,
+          ...persistedState,
+          capabilities: {
+            ...currentState.capabilities,
+            ...persistedState.capabilities,
+          },
+          profile: {
+            ...currentState.profile,
+            ...persistedState.profile,
+          },
+          appearance: {
+            ...currentState.appearance,
+            ...persistedState.appearance,
+          },
+          notifications: {
+            ...currentState.notifications,
+            ...persistedState.notifications,
+          },
+          privacy: {
+            ...currentState.privacy,
+            ...persistedState.privacy,
+          },
+          memory: {
+            ...currentState.memory,
+            ...persistedState.memory,
+          },
+        };
+      }
+    }
   )
 );
 

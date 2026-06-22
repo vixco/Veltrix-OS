@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { MessageSquare, Code2, Palette, Users, ChevronDown } from "lucide-react";
+import { MessageSquare, Code2, Palette, Users, ChevronDown, Microscope } from "lucide-react";
 import type { WorkMode } from "@/lib/modes";
 import { MODES } from "@/lib/modes";
 import { cn } from "@/lib/utils";
@@ -11,6 +11,7 @@ const modeIcons = {
   code: Code2,
   design: Palette,
   cowork: Users,
+  research: Microscope,
 };
 
 interface ModeSelectorProps {

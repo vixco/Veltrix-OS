@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import * as React from "react";
 import {
@@ -740,22 +740,208 @@ function ToolsTab() {
         <div key={kind}>
           <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-fg/60 mb-1.5">{KIND_LABEL[kind]}</p>
           <div className="space-y-1.5">
-            {groups[kind].map((item) => (
-              <div key={item.id} className={cn("flex items-start justify-between gap-3 rounded-xl border border-border p-3", item.featured && "border-accent/40 bg-accent/5")}>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[13px] font-medium text-foreground">{item.name}</span>
-                    {item.featured && <span className="text-[10px] font-semibold uppercase tracking-wide text-accent">Featured</span>}
+            {groups[kind].map((item) => {
+              const isComposio = item.id === "connector-composio";
+              const isEnabled = enabled(item.id);
+              return (
+                <div key={item.id} className="space-y-2">
+                  <div className={cn("flex items-start justify-between gap-3 rounded-xl border border-border p-3", item.featured && "border-accent/40 bg-accent/5")}>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[13px] font-medium text-foreground">{item.name}</span>
+                        {item.featured && <span className="text-[10px] font-semibold uppercase tracking-wide text-accent">Featured</span>}
+                      </div>
+                      <p className="text-[12px] text-muted-fg mt-0.5 leading-snug">{item.description}</p>
+                      <p className="text-[11px] text-muted-fg/60 mt-1">by {item.author} - {item.category}</p>
+                    </div>
+                    <Switch checked={isEnabled} onChange={(v) => setToolEnabled(item.id, v)} />
                   </div>
-                  <p className="text-[12px] text-muted-fg mt-0.5 leading-snug">{item.description}</p>
-                  <p className="text-[11px] text-muted-fg/60 mt-1">by {item.author} - {item.category}</p>
+                  {isComposio && isEnabled && <ComposioConfigSection />}
                 </div>
-                <Switch checked={enabled(item.id)} onChange={(v) => setToolEnabled(item.id, v)} />
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function ComposioConfigSection() {
+  const composioApiKey = usePreferences((s) => s.composioApiKey);
+  const setComposioApiKey = usePreferences((s) => s.setComposioApiKey);
+  
+  const [keyInput, setKeyInput] = React.useState(composioApiKey);
+  const [connections, setConnections] = React.useState<any[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [linkingApp, setLinkingApp] = React.useState("github");
+  const [linkLoading, setLinkLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const fetchConnections = React.useCallback(async (apiKeyToUse: string) => {
+    if (!apiKeyToUse) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/host/composio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "list_connections",
+          composioApiKey: apiKeyToUse,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setConnections(data.connections || []);
+      } else {
+        setError(data.error || "Failed to load connections");
+      }
+    } catch (err: any) {
+      setError(err?.message || "Failed to fetch connections");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (composioApiKey) {
+      fetchConnections(composioApiKey);
+    }
+  }, [composioApiKey, fetchConnections]);
+
+  const handleSaveKey = () => {
+    setComposioApiKey(keyInput.trim());
+    if (keyInput.trim()) {
+      fetchConnections(keyInput.trim());
+    } else {
+      setConnections([]);
+    }
+  };
+
+  const handleLinkApp = async () => {
+    setLinkLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/host/composio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "get_auth_link",
+          appName: linkingApp,
+          composioApiKey: composioApiKey || keyInput.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (data.ok && data.redirectUrl) {
+        window.open(data.redirectUrl, "_blank");
+      } else {
+        setError(data.error || "Failed to generate link");
+      }
+    } catch (err: any) {
+      setError(err?.message || "Failed to generate auth link");
+    } finally {
+      setLinkLoading(false);
+    }
+  };
+
+  const POPULAR_APPS = [
+    { slug: "github", label: "GitHub" },
+    { slug: "slack", label: "Slack" },
+    { slug: "gmail", label: "Gmail" },
+    { slug: "notion", label: "Notion" },
+    { slug: "trello", label: "Trello" },
+    { slug: "jira", label: "Jira" },
+    { slug: "linear", label: "Linear" },
+  ];
+
+  return (
+    <div className="rounded-xl border border-border bg-surface-2/40 p-4 space-y-4 ml-4">
+      <div className="space-y-1.5">
+        <label className="text-[12px] font-medium text-foreground">Composio API Key</label>
+        <div className="flex gap-2">
+          <Input
+            type="password"
+            placeholder="Enter your Composio API Key (ak_...)"
+            value={keyInput}
+            onChange={(e) => setKeyInput(e.target.value)}
+            className="flex-1 h-9"
+          />
+          <Button onClick={handleSaveKey} size="sm" className="h-9">
+            Save
+          </Button>
+        </div>
+        <p className="text-[11px] text-muted-fg leading-relaxed">
+          Create an API key in your{" "}
+          <a href="https://app.composio.dev" target="_blank" rel="noopener noreferrer" className="text-accent underline">
+            Composio Dashboard
+          </a>
+          . Stored locally in your browser.
+        </p>
+      </div>
+
+      {composioApiKey && (
+        <div className="space-y-3 pt-2 border-t border-border/60">
+          <div className="flex items-center justify-between">
+            <span className="text-[12px] font-medium text-foreground">Connected Integrations</span>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => fetchConnections(composioApiKey)}
+              disabled={loading}
+              className="h-7 w-7 animate-none"
+            >
+              <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+            </Button>
+          </div>
+
+          {loading ? (
+            <div className="flex items-center justify-center py-4 text-muted-fg gap-2">
+              <Loader2 className="h-4 w-4 animate-spin text-accent" />
+              <span className="text-[12px]">Loading connections...</span>
+            </div>
+          ) : connections.length === 0 ? (
+            <p className="text-[12px] text-muted-fg py-2 italic">No active connections yet. Link an app below!</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              {connections.map((conn: any) => (
+                <div key={conn.id || conn.connectedAccountId} className="flex items-center justify-between border border-border bg-surface p-2 rounded-lg text-[12px]">
+                  <span className="capitalize font-medium text-foreground">{conn.appName || conn.appUniqueId}</span>
+                  <span className={cn("px-1.5 py-0.5 rounded text-[10px] font-semibold", conn.status === "ACTIVE" ? "bg-emerald-500/10 text-emerald-500" : "bg-yellow-500/10 text-yellow-500")}>
+                    {conn.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {error && (
+            <div className="flex items-center gap-1.5 text-red-500 bg-red-500/10 p-2.5 rounded-lg text-[11px]">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{error}</span>
+            </div>
+          )}
+
+          <div className="space-y-1.5 pt-2 border-t border-border/45">
+            <label className="text-[12px] font-medium text-foreground">Connect a New App</label>
+            <div className="flex gap-2">
+              <select
+                value={linkingApp}
+                onChange={(e) => setLinkingApp(e.target.value)}
+                className="flex-1 h-9 rounded-lg bg-surface-3 border border-border px-3 text-[13px] text-foreground focus:outline-none focus:border-accent/50"
+              >
+                {POPULAR_APPS.map((app) => (
+                  <option key={app.slug} value={app.slug}>{app.label}</option>
+                ))}
+              </select>
+              <Button onClick={handleLinkApp} disabled={linkLoading} size="sm" className="h-9 gap-1.5">
+                {linkLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                Connect
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -828,6 +1014,10 @@ function ModelsTab() {
           <div className="h-px bg-border my-1" />
           <Row title="Host access" desc="Let Veltrix run shell commands and read/write files on this machine.">
             <Switch checked={caps.hostAccess} onChange={(v) => setCaps({ hostAccess: v })} />
+          </Row>
+          <div className="h-px bg-border my-1" />
+          <Row title="Real browser" desc="Let Veltrix drive a live headless Chromium: navigate, click, type, and screenshot any site.">
+            <Switch checked={caps.browserAccess} onChange={(v) => setCaps({ browserAccess: v })} />
           </Row>
         </Card>
       </div>

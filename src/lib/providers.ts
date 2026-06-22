@@ -45,6 +45,8 @@ export interface StreamChunk {
   done: boolean;
   /** Optional reasoning/thinking content streamed separately from the answer. */
   thinking?: string;
+  /** Provider stop reason (e.g. "length", "max_tokens", "end_turn", "stop"). Used to detect truncated responses for "Continue generating". */
+  finishReason?: string;
 }
 
 export interface CompletionParams {
@@ -53,6 +55,9 @@ export interface CompletionParams {
   temperature?: number;
   maxTokens?: number;
   signal?: AbortSignal;
+  /** Extended thinking control: "auto" = per-model default, "on" = force, "off" = disable (saves tokens). */
+  thinking?: "auto" | "on" | "off";
+  thinkingBudget?: number;
 }
 
 export interface ProviderAdapter {
@@ -217,9 +222,10 @@ const AnthropicAdapter: ProviderAdapter = {
     const base = config.baseUrl || AnthropicAdapter.defaultBaseUrl;
     const systemMsg = params.messages.find((m) => m.role === "system");
     const chatMsgs = params.messages.filter((m) => m.role !== "system");
-    const useThinking = supportsAnthropicThinking(params.model);
+    const thinkingMode = params.thinking ?? "auto";
+    const useThinking = thinkingMode === "off" ? false : thinkingMode === "on" ? true : supportsAnthropicThinking(params.model);
     // Extended thinking requires temperature = 1 and max_tokens > budget_tokens.
-    const budgetTokens = 2500;
+    const budgetTokens = params.thinkingBudget ?? 4000;
     const maxTokens = useThinking
       ? Math.max(params.maxTokens ?? 8192, budgetTokens + 2048)
       : params.maxTokens ?? 4096;
@@ -611,8 +617,10 @@ async function parseSSEStream(
           const data = JSON.parse(dataStr);
           const delta = extractDelta(data);
           const thinking = extractThinking ? extractThinking(data) : "";
+          const fr = data.choices?.[0]?.finish_reason;
           if (delta) controller.enqueue({ delta, done: false });
           if (thinking) controller.enqueue({ delta: "", thinking, done: false });
+          if (fr) controller.enqueue({ delta: "", done: false, finishReason: fr });
         } catch {}
       }
     },
@@ -653,6 +661,9 @@ async function parseAnthropicSSE(res: Response): Promise<ReadableStream<StreamCh
               controller.enqueue({ delta: d.text, done: false });
             }
           }
+          if (data.type === "message_delta" && data.delta?.stop_reason) {
+            controller.enqueue({ delta: "", done: false, finishReason: data.delta.stop_reason });
+          }
           if (data.type === "message_stop") {
             controller.enqueue({ delta: "", done: true });
             controller.close();
@@ -692,6 +703,7 @@ async function parseNDJSONStream(
         try {
           const data = JSON.parse(trimmed);
           if (data.done) {
+            if (data.done_reason) controller.enqueue({ delta: "", done: false, finishReason: data.done_reason });
             controller.enqueue({ delta: "", done: true });
             controller.close();
             return;

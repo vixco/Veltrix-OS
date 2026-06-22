@@ -356,3 +356,50 @@ body {
   transition-duration: 0.05ms !important;
   scroll-behavior: auto !important;
 }
+
+/* === OS Mode / Insane Desktop styles === */
+.os-desktop-bg {
+  background-color: #0c0a0f;
+  background-image: 
+    radial-gradient(circle at 100% 100%, rgba(198, 97, 63, 0.08) 0%, transparent 40%),
+    radial-gradient(circle at 0% 0%, rgba(99, 102, 241, 0.06) 0%, transparent 45%),
+    radial-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 0);
+  background-size: 100% 100%, 100% 100%, 20px 20px;
+  background-attachment: fixed;
+}
+.os-glass {
+  background: rgba(22, 21, 28, 0.72);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+.os-glass-light {
+  background: rgba(255, 255, 255, 0.035);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+.os-taskbar {
+  background: rgba(14, 13, 19, 0.78);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.os-window-active {
+  box-shadow: 0 24px 50px -12px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.06), 0 0 20px -5px rgba(198, 97, 63, 0.15);
+}
+.os-window-inactive {
+  box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  opacity: 0.94;
+}
+@keyframes window-open {
+  from { opacity: 0; transform: scale(0.95) translateY(12px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.animate-window-open {
+  animation: window-open 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.bg-grid-glow {
+  background: radial-gradient(800px circle at var(--x, 0px) var(--y, 0px), rgba(198, 97, 63, 0.05), transparent 80%);
+}
+

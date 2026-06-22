@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, GitCompare, Code2, CalendarClock, ChevronRight, Palette } from "lucide-react";
+import { FileText, GitCompare, Code2, CalendarClock, ChevronRight, Palette, ImageIcon } from "lucide-react";
 import type { Artifact } from "@/lib/artifacts";
 import { cn } from "@/lib/utils";
 
@@ -10,6 +10,7 @@ const typeIcons = {
   code: Code2,
   planner: CalendarClock,
   design: Palette,
+  image: ImageIcon,
 };
 
 const typeLabels = {
@@ -18,6 +19,7 @@ const typeLabels = {
   code: "Code",
   planner: "Planner",
   design: "Design",
+  image: "Image",
 };
 
 export function ArtifactBubble({

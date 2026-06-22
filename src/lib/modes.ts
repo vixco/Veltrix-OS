@@ -1,6 +1,6 @@
 import type { ArtifactType } from "./artifacts";
 
-export type WorkMode = "chat" | "code" | "design" | "cowork";
+export type WorkMode = "chat" | "code" | "design" | "cowork" | "research";
 
 export interface ModeConfig {
   id: WorkMode;
@@ -80,6 +80,27 @@ You can create:
 
 Always wrap content in artifact tags so it can be shared.`,
   },
+  research: {
+    id: "research",
+    label: "Research",
+    icon: "Microscope",
+    description: "Deep multi-source research with citations",
+    placeholder: "What should I research in depth? I will search multiple sources and cite them.",
+    systemPromptExtra: `You are in RESEARCH mode. Do thorough, multi-source research and write a well-structured report.
+
+Process:
+1. Break the question into 2-5 sub-questions.
+2. Call web_search for each sub-question; read the most promising 2-4 results with web_fetch.
+3. Cross-check facts across sources. Prefer authoritative, recent sources.
+4. When you need current data (prices, releases, news), always search the web - never rely on memory.
+
+Output:
+- A concise executive summary (3-6 sentences) at the top.
+- Then sections with findings. Cite EVERY factual claim inline as [Title](url).
+- A short "Sources" list of the key URLs you used at the end.
+- If sources conflict, say so and explain the discrepancy.
+
+Keep going across multiple search/fetch steps until the picture is complete and current. Do not stop after a single search. Aim for depth and accuracy over speed. If a tool fails, try another source. Never invent URLs or facts.`,  },
 };
 
 export function getMode(id: WorkMode): ModeConfig {

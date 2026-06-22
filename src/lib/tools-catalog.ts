@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 // =================================================================
 // Tools / Skills / Connectors catalog
@@ -23,6 +23,16 @@ export interface CatalogItem {
 
 export const TOOLS_CATALOG: CatalogItem[] = [
   // --- Marquee skills ---
+  {
+    id: "image-generation",
+    kind: "skill",
+    name: "Image Generation",
+    description: "Generate images from a text prompt. Works for everyone with no API key (Pollinations), so you can create, draw, and illustrate on demand.",
+    author: "Veltrix",
+    category: "Creative",
+    capabilities: ["generate images from a text prompt", "render generated images inline in the chat"],
+    featured: true,
+  },
   {
     id: "frontend-design",
     kind: "skill",
@@ -62,6 +72,25 @@ export const TOOLS_CATALOG: CatalogItem[] = [
     capabilities: ["search the web", "retrieve and summarize current information"],
   },
   {
+    id: "real-browser",
+    kind: "tool",
+    name: "Real Browser",
+    description: "Drive a live headless Chromium: navigate, click, type, fill forms, screenshot, and run JS on any site. The AI browses the web for itself.",
+    author: "Veltrix",
+    category: "Research",
+    capabilities: ["browse the web with a real browser", "click, type, and interact with live pages", "take screenshots and read rendered content"],
+    featured: true,
+  },
+  {
+    id: "host-files",
+    kind: "tool",
+    name: "Host Files",
+    description: "Read, list, and write files directly on the host machine, plus a Files desktop app to browse them.",
+    author: "Veltrix",
+    category: "Developer",
+    capabilities: ["read and write files on the host", "browse the host filesystem via the Files app"],
+  },
+  {
     id: "artifact-builder",
     kind: "skill",
     name: "AI-Powered Artifacts",
@@ -94,46 +123,24 @@ export const TOOLS_CATALOG: CatalogItem[] = [
     id: "connector-github",
     kind: "connector",
     name: "GitHub",
-    description: "Connect repositories to read issues, PRs, and code.",
+    description: "Read public GitHub repositories: repo info + README, files, directory tree, open issues, and open pull requests. No connection setup required.",
     author: "Veltrix",
     category: "Connectors",
-    capabilities: ["read GitHub repositories, issues, and pull requests"],
+    capabilities: ["read public GitHub repository info and README", "read files and list directory trees in a GitHub repo", "list open issues and pull requests in a GitHub repo"],
+    featured: true,
   },
   {
-    id: "connector-notion",
+    id: "connector-composio",
     kind: "connector",
-    name: "Notion",
-    description: "Search and reference your Notion pages.",
-    author: "Veltrix",
+    name: "Composio Integrations",
+    description: "Connect to 100+ external tools like Slack, Gmail, Notion, Trello, Jira, and Linear. Enables executing actions in external apps dynamically.",
+    author: "Composio",
     category: "Connectors",
-    capabilities: ["search and reference Notion pages"],
-  },
-  {
-    id: "connector-slack",
-    kind: "connector",
-    name: "Slack",
-    description: "Look up chats and messages from your Slack workspace.",
-    author: "Veltrix",
-    category: "Connectors",
-    capabilities: ["look up Slack chats and messages"],
-  },
-  {
-    id: "connector-google",
-    kind: "connector",
-    name: "Google Drive",
-    description: "Search across your Google Drive documents.",
-    author: "Veltrix",
-    category: "Connectors",
-    capabilities: ["search Google Drive documents"],
-  },
-  {
-    id: "connector-figma",
-    kind: "connector",
-    name: "Figma",
-    description: "Pull design files and frames into Veltrix.",
-    author: "Veltrix",
-    category: "Connectors",
-    capabilities: ["import Figma designs"],
+    capabilities: [
+      "access third-party integrations like Slack, Gmail, Notion, Salesforce, Jira, and Linear through Composio",
+      "execute external API actions for Slack, Gmail, Trello, Trello, and other services via Composio",
+    ],
+    featured: true,
   },
 ];
 

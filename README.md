@@ -2,6 +2,18 @@
 
 A premium self-hosted AI operating system with artifact-based output, multi-provider support, and Apple-level UI polish.
 
+## Veltrix as a real OS (AGI mode)
+
+Veltrix OS is not just a chat shell. It is a self-aware agent with a real browser, a real desktop, and direct access to the host machine.
+
+- **Real browser** — Veltrix drives a live headless Chromium (Playwright) on its own: navigate, click, fill forms, type, scroll, take screenshots, run JavaScript on the page, read rendered text/HTML, and manage multiple tabs. It uses the browser autonomously inside its agent loop when a page needs interaction or JavaScript to render. No API key required; run `npx playwright install chromium` once on the host.
+- **Files desktop** — a real file manager for this machine at `/files`. Browse directories, open and edit text files inline, create files and folders, rename, delete, and download. Breadcrumb navigation, host home directory, and a full keyboard-friendly editor (Ctrl/Cmd-S to save).
+- **Host shell + filesystem** — Veltrix can run shell commands and read/write files on the host directly, so it can genuinely do work (git, scripts, build, inspect) instead of just describing it.
+- **Self-model** — every turn, Veltrix is told exactly who it is, which model it is running on, what host it is on, and which capabilities are enabled right now, so it acts with awareness of its own situation.
+- **Autonomous agent loop** — Veltrix emits `tool_call` blocks, the system runs the tool, feeds the result back, and Veltrix keeps going across multiple steps until the task is genuinely done.
+
+Enable these under **Settings → Capabilities**: *Web access*, *Real browser*, and *Host access*. They are on by default in local development. In production, set `VELTRIX_HOST_ACCESS=true` on the server to opt in to host shell, filesystem, and browser control.
+
 ## Features
 
 - **No backend required** — runs fully standalone in the browser as a local guest, with optional cloud sync via PocketBase

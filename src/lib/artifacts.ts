@@ -2,7 +2,7 @@
 // Artifact Type System
 // ═══════════════════════════════════════════════
 
-export type ArtifactType = "document" | "comparison" | "code" | "planner" | "design";
+export type ArtifactType = "document" | "comparison" | "code" | "planner" | "design" | "image";
 
 export interface ArtifactSection {
   heading?: string;
@@ -38,6 +38,11 @@ export interface Artifact {
   code?: string;
   // Planner
   plan?: PlannerItem[];
+  // Image
+  imageUrl?: string;
+  prompt?: string;
+  width?: number;
+  height?: number;
   // Meta
   createdAt: number;
   updatedAt: number;
@@ -46,11 +51,6 @@ export interface Artifact {
 // ═══════════════════════════════════════════════
 // Artifact Detection & Parsing
 // ═══════════════════════════════════════════════
-
-/**
- * System prompt instructs the LLM to emit structured artifacts
- * in a tagged XML-like format. We parse those tags.
- */
 
 export const ARTIFACT_SYSTEM_PROMPT = `You are Veltrix OS, an AI operating system that creates structured artifacts.
 
@@ -99,6 +99,15 @@ Body text here.
 ]]>
 </artifact>
 
+## Image generation
+
+You can generate images. First call the image_gen tool with a vivid prompt and optional width/height; it returns { url, width, height, prompt }. Then render the result with an image artifact so it shows inline:
+
+<artifact type="image" title="A descriptive title" prompt="the prompt you used" url="THE_URL_FROM_image_gen" width="1024" height="1024">
+</artifact>
+
+Always use the EXACT url the tool returned. Never invent a URL. If image_gen fails, tell the user plainly. Generate images whenever the user asks to create, draw, design, or illustrate a picture.
+
 ## Rules
 1. ALWAYS use artifact tags when creating content — never dump raw markdown
 2. For simple questions or casual chat, just respond normally without artifacts
@@ -110,122 +119,163 @@ Body text here.
 8. For design artifacts, produce self-contained HTML with inline CSS
 9. Code and design artifacts use the same structure (language + CDATA code block)`;
 
-export function parseArtifactTags(text: string): {
-  beforeArtifact: string;
-  artifact: Artifact | null;
-  afterArtifact: string;
-  artifactInProgress: { type: ArtifactType; title: string } | null;
-} {
-  const openMatch = text.match(/<artifact\s+([^>]+)>/);
-  if (!openMatch) {
-    return { beforeArtifact: text, artifact: null, afterArtifact: "", artifactInProgress: null };
+export type MessageBlock =
+  | { type: "text"; content: string }
+  | { type: "artifact"; artifact: Artifact }
+  | { type: "artifactInProgress"; artifactType: ArtifactType; title: string };
+
+export function parseMessageContent(text: string): MessageBlock[] {
+  const blocks: MessageBlock[] = [];
+  let remaining = text;
+
+  while (true) {
+    const openMatch = remaining.match(/<artifact\s+([^>]+)>/);
+    if (!openMatch) {
+      if (remaining.trim()) {
+        blocks.push({ type: "text", content: remaining });
+      }
+      break;
+    }
+
+    const beforeText = remaining.slice(0, openMatch.index);
+    if (beforeText.trim()) {
+      blocks.push({ type: "text", content: beforeText });
+    }
+
+    const afterOpen = remaining.slice(openMatch.index! + openMatch[0].length);
+    const attrStr = openMatch[1];
+    const typeMatch = attrStr.match(/type="([^"]+)"/);
+    const titleMatch = attrStr.match(/title="([^"]+)"/);
+    const artifactType = (typeMatch?.[1] as ArtifactType) || "document";
+    const title = titleMatch?.[1] || "Untitled";
+
+    const closeMatch = afterOpen.match(/<\/artifact>/);
+    if (!closeMatch) {
+      // Artifact in progress
+      blocks.push({ type: "artifactInProgress", artifactType, title });
+      break;
+    }
+
+    const inner = afterOpen.slice(0, closeMatch.index);
+    const langMatch = attrStr.match(/language="([^"]+)"/);
+    const language = langMatch?.[1];
+    const now = Date.now();
+    let artifact: Artifact;
+
+    if (artifactType === "image") {
+      const promptMatch = attrStr.match(/prompt="([^"]*)"/);
+      const urlAttr = attrStr.match(/url="([^"]+)"/);
+      const urlInner = inner.match(/(https?:\/\/[^\s"<]+)/);
+      const wMatch = attrStr.match(/width="([0-9]+)"/);
+      const hMatch = attrStr.match(/height="([0-9]+)"/);
+      artifact = {
+        id: artifactHash(artifactType, title, inner),
+        type: artifactType,
+        title,
+        imageUrl: urlAttr?.[1] || urlInner?.[1] || "",
+        prompt: promptMatch?.[1] || title,
+        width: wMatch ? parseInt(wMatch[1]) : undefined,
+        height: hMatch ? parseInt(hMatch[1]) : undefined,
+        createdAt: now,
+        updatedAt: now,
+      };
+    } else if (artifactType === "code" || artifactType === "design") {
+      const codeMatch = inner.match(/<!\[CDATA\[([\s\S]*?)\]\]>/);
+      artifact = {
+        id: artifactHash(artifactType, title, inner),
+        type: artifactType,
+        title,
+        language,
+        code: codeMatch?.[1]?.trim() || inner.trim(),
+        createdAt: now,
+        updatedAt: now,
+      };
+    } else if (artifactType === "comparison") {
+      const items: ComparisonItem[] = [];
+      const itemRegex = /<item\s+([^>]*)>([\s\S]*?)<\/item>/g;
+      let match;
+      while ((match = itemRegex.exec(inner)) !== null) {
+        const itemAttrs = match[1];
+        const itemBody = match[2];
+        const nameMatch = itemAttrs.match(/name="([^"]+)"/);
+        const scoreMatch = itemAttrs.match(/score="([^"]+)"/);
+        const pros = [];
+        const prosRegex = /<pros>([\s\S]*?)<\/pros>/g;
+        let p;
+        while ((p = prosRegex.exec(itemBody)) !== null) pros.push(p[1].trim());
+        const cons = [];
+        const consRegex = /<cons>([\s\S]*?)<\/cons>/g;
+        let c;
+        while ((c = consRegex.exec(itemBody)) !== null) cons.push(c[1].trim());
+        items.push({
+          name: nameMatch?.[1] || "Unknown",
+          pros,
+          cons,
+          score: scoreMatch ? parseFloat(scoreMatch[1]) : undefined,
+        });
+      }
+      artifact = {
+        id: artifactHash(artifactType, title, inner),
+        type: artifactType,
+        title,
+        items,
+        createdAt: now,
+        updatedAt: now,
+      };
+    } else if (artifactType === "planner") {
+      const plan: PlannerItem[] = [];
+      const entryRegex = /<entry\s+([^>]*)>([\s\S]*?)<\/entry>/g;
+      let match;
+      while ((match = entryRegex.exec(inner)) !== null) {
+        const attrs = match[1];
+        const body = match[2].trim();
+        const timeMatch = attrs.match(/time="([^"]+)"/);
+        const titleMatch = attrs.match(/title="([^"]+)"/);
+        plan.push({
+          time: timeMatch?.[1],
+          title: titleMatch?.[1] || "Untitled",
+          description: body || undefined,
+        });
+      }
+      artifact = {
+        id: artifactHash(artifactType, title, inner),
+        type: artifactType,
+        title,
+        plan,
+        createdAt: now,
+        updatedAt: now,
+      };
+    } else {
+      // document
+      const sections: ArtifactSection[] = [];
+      const sectionRegex = /<section\s+([^>]*)>([\s\S]*?)<\/section>/g;
+      let match;
+      while ((match = sectionRegex.exec(inner)) !== null) {
+        const attrs = match[1];
+        const body = match[2].trim();
+        const headingMatch = attrs.match(/heading="([^"]+)"/);
+        const items = body.match(/^- (.+)$/gm)?.map((m) => m.replace(/^- /, "").trim()) || [];
+        sections.push({
+          heading: headingMatch?.[1],
+          body: items.length > 0 && !body.includes("\n\n") ? "" : body.replace(/^- .+$/gm, "").trim(),
+          items: items.length > 0 ? items : undefined,
+        });
+      }
+      artifact = {
+        id: artifactHash(artifactType, title, inner),
+        type: artifactType,
+        title,
+        sections,
+        createdAt: now,
+        updatedAt: now,
+      };
+    }
+
+    blocks.push({ type: "artifact", artifact });
+    remaining = afterOpen.slice(closeMatch.index! + closeMatch[0].length);
   }
 
-  const beforeArtifact = text.slice(0, openMatch.index);
-  const afterOpen = text.slice(openMatch.index! + openMatch[0].length);
-
-  // Parse attributes from the opening tag (available even before the
-  // closing tag arrives, so we can show a "creating" state while streaming).
-  const attrStr = openMatch[1];
-  const typeMatch = attrStr.match(/type="([^"]+)"/);
-  const titleMatch = attrStr.match(/title="([^"]+)"/);
-  const type = (typeMatch?.[1] as ArtifactType) || "document";
-  const title = titleMatch?.[1] || "Untitled";
-
-  const closeMatch = afterOpen.match(/<\/artifact>/);
-  if (!closeMatch) {
-    // Artifact is still streaming in -- only the opening tag has arrived.
-    // Don't expose the raw half-written content to the renderer; surface a
-    // calm "creating" state and reveal the artifact once it is complete.
-    return {
-      beforeArtifact,
-      artifact: null,
-      afterArtifact: "",
-      artifactInProgress: { type, title },
-    };
-  }
-
-  const inner = afterOpen.slice(0, closeMatch.index);
-  const afterArtifact = afterOpen.slice(closeMatch.index! + closeMatch[0].length);
-
-  const langMatch = attrStr.match(/language="([^"]+)"/);
-  const language = langMatch?.[1];
-
-  const now = Date.now();
-  let artifact: Artifact;
-
-  if (type === "code" || type === "design") {
-    const codeMatch = inner.match(/<!\[CDATA\[([\s\S]*?)\]\]>/);
-    artifact = {
-      id: artifactHash(type, title, inner),
-      type,
-      title,
-      language,
-      code: codeMatch?.[1]?.trim() || inner.trim(),
-      createdAt: now,
-      updatedAt: now,
-    };
-  } else if (type === "comparison") {
-    const items: ComparisonItem[] = [];
-    const itemRegex = /<item\s+([^>]*)>([\s\S]*?)<\/item>/g;
-    let match;
-    while ((match = itemRegex.exec(inner)) !== null) {
-      const itemAttrs = match[1];
-      const itemBody = match[2];
-      const nameMatch = itemAttrs.match(/name="([^"]+)"/);
-      const scoreMatch = itemAttrs.match(/score="([^"]+)"/);
-      const pros = [];
-      const prosRegex = /<pros>([\s\S]*?)<\/pros>/g;
-      let p;
-      while ((p = prosRegex.exec(itemBody)) !== null) pros.push(p[1].trim());
-      const cons = [];
-      const consRegex = /<cons>([\s\S]*?)<\/cons>/g;
-      let c;
-      while ((c = consRegex.exec(itemBody)) !== null) cons.push(c[1].trim());
-      items.push({
-        name: nameMatch?.[1] || "Unknown",
-        pros,
-        cons,
-        score: scoreMatch ? parseFloat(scoreMatch[1]) : undefined,
-      });
-    }
-    artifact = { id: artifactHash(type, title, inner), type, title, items, createdAt: now, updatedAt: now };
-  } else if (type === "planner") {
-    const plan: PlannerItem[] = [];
-    const entryRegex = /<entry\s+([^>]*)>([\s\S]*?)<\/entry>/g;
-    let match;
-    while ((match = entryRegex.exec(inner)) !== null) {
-      const attrs = match[1];
-      const body = match[2].trim();
-      const timeMatch = attrs.match(/time="([^"]+)"/);
-      const titleMatch = attrs.match(/title="([^"]+)"/);
-      plan.push({
-        time: timeMatch?.[1],
-        title: titleMatch?.[1] || "Untitled",
-        description: body || undefined,
-      });
-    }
-    artifact = { id: artifactHash(type, title, inner), type, title, plan, createdAt: now, updatedAt: now };
-  } else {
-    // document
-    const sections: ArtifactSection[] = [];
-    const sectionRegex = /<section\s+([^>]*)>([\s\S]*?)<\/section>/g;
-    let match;
-    while ((match = sectionRegex.exec(inner)) !== null) {
-      const attrs = match[1];
-      const body = match[2].trim();
-      const headingMatch = attrs.match(/heading="([^"]+)"/);
-      const items = body.match(/^- (.+)$/gm)?.map((m) => m.replace(/^- /, "").trim()) || [];
-      sections.push({
-        heading: headingMatch?.[1],
-        body: items.length > 0 && !body.includes("\n\n") ? "" : body.replace(/^- .+$/gm, "").trim(),
-        items: items.length > 0 ? items : undefined,
-      });
-    }
-    artifact = { id: artifactHash(type, title, inner), type, title, sections, createdAt: now, updatedAt: now };
-  }
-
-  return { beforeArtifact, artifact, afterArtifact, artifactInProgress: null };
+  return blocks;
 }
 
 // Deterministic id derived from the artifact content so the same message
