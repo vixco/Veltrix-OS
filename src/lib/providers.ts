@@ -117,10 +117,13 @@ async function proxyFetch(
   const proxyUrl = "/api/proxy";
   if (method === "GET") {
     const params = new URLSearchParams({ target });
+    // Pass the auth value in a request header (not the query string) so API
+    // keys never land in URLs, logs, or the browser history.
+    const headers: Record<string, string> = {};
     if (extraHeaders?.["Authorization"]) {
-      params.set("auth", extraHeaders["Authorization"]);
+      headers["x-proxy-auth"] = extraHeaders["Authorization"];
     }
-    return fetch(`${proxyUrl}?${params}`, { signal });
+    return fetch(`${proxyUrl}?${params}`, { headers, signal });
   }
   return fetch(proxyUrl, {
     method: "POST",
@@ -584,10 +587,44 @@ async function parseSSEStream(
   const decoder = new TextDecoder();
   let buffer = "";
 
+  // Parse one line; returns true if the stream signalled completion ([DONE]).
+  const handleLine = (line: string, controller: ReadableStreamDefaultController<StreamChunk>): boolean => {
+    const trimmed = line.trim();
+    if (!trimmed) return false;
+    // Accept "data: {...}", "data:{...}" (no space), bare "[DONE]", and
+    // raw NDJSON lines starting with "{" (Ollama Cloud streaming shape).
+    let dataStr = "";
+    if (trimmed.startsWith("data:")) {
+      dataStr = trimmed.slice(5).trimStart();
+    } else if (trimmed.startsWith("{")) {
+      dataStr = trimmed;
+    } else {
+      return false;
+    }
+    if (dataStr === "[DONE]") {
+      controller.enqueue({ delta: "", done: true });
+      return true;
+    }
+    try {
+      const data = JSON.parse(dataStr);
+      const delta = extractDelta(data);
+      const thinking = extractThinking ? extractThinking(data) : "";
+      const fr = data.choices?.[0]?.finish_reason;
+      if (delta) controller.enqueue({ delta, done: false });
+      if (thinking) controller.enqueue({ delta: "", thinking, done: false });
+      if (fr) controller.enqueue({ delta: "", done: false, finishReason: fr });
+    } catch {}
+    return false;
+  };
+
   return new ReadableStream({
     async pull(controller) {
       const { done, value } = await reader.read();
       if (done) {
+        // Stream closed without a [DONE] marker: flush the residual buffer
+        // through the same parser so a final partial line is not dropped.
+        if (buffer.trim()) handleLine(buffer, controller);
+        buffer = "";
         controller.close();
         return;
       }
@@ -596,32 +633,10 @@ async function parseSSEStream(
       buffer = lines.pop() || "";
 
       for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        // Accept "data: {...}", "data:{...}" (no space), bare "[DONE]", and
-        // raw NDJSON lines starting with "{" (Ollama Cloud streaming shape).
-        let dataStr = "";
-        if (trimmed.startsWith("data:")) {
-          dataStr = trimmed.slice(5).trimStart();
-        } else if (trimmed.startsWith("{")) {
-          dataStr = trimmed;
-        } else {
-          continue;
-        }
-        if (dataStr === "[DONE]") {
-          controller.enqueue({ delta: "", done: true });
+        if (handleLine(line, controller)) {
           controller.close();
           return;
         }
-        try {
-          const data = JSON.parse(dataStr);
-          const delta = extractDelta(data);
-          const thinking = extractThinking ? extractThinking(data) : "";
-          const fr = data.choices?.[0]?.finish_reason;
-          if (delta) controller.enqueue({ delta, done: false });
-          if (thinking) controller.enqueue({ delta: "", thinking, done: false });
-          if (fr) controller.enqueue({ delta: "", done: false, finishReason: fr });
-        } catch {}
       }
     },
     cancel() {
@@ -635,10 +650,40 @@ async function parseAnthropicSSE(res: Response): Promise<ReadableStream<StreamCh
   const decoder = new TextDecoder();
   let buffer = "";
 
+  // Parse one line; returns true if the stream signalled completion.
+  const handleLine = (line: string, controller: ReadableStreamDefaultController<StreamChunk>): boolean => {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("data: ")) return false;
+    try {
+      const data = JSON.parse(trimmed.slice(6));
+      if (data.type === "content_block_delta") {
+        const d = data.delta;
+        if (d?.type === "thinking_delta" && d.thinking) {
+          controller.enqueue({ delta: "", thinking: d.thinking, done: false });
+        } else if (d?.type === "text_delta" && d.text) {
+          controller.enqueue({ delta: d.text, done: false });
+        } else if (!d?.type && d?.text) {
+          controller.enqueue({ delta: d.text, done: false });
+        }
+      }
+      if (data.type === "message_delta" && data.delta?.stop_reason) {
+        controller.enqueue({ delta: "", done: false, finishReason: data.delta.stop_reason });
+      }
+      if (data.type === "message_stop") {
+        controller.enqueue({ delta: "", done: true });
+        return true;
+      }
+    } catch {}
+    return false;
+  };
+
   return new ReadableStream({
     async pull(controller) {
       const { done, value } = await reader.read();
       if (done) {
+        // Flush residual buffered line if the stream closed without message_stop.
+        if (buffer.trim()) handleLine(buffer, controller);
+        buffer = "";
         controller.close();
         return;
       }
@@ -647,29 +692,10 @@ async function parseAnthropicSSE(res: Response): Promise<ReadableStream<StreamCh
       buffer = lines.pop() || "";
 
       for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data: ")) continue;
-        try {
-          const data = JSON.parse(trimmed.slice(6));
-          if (data.type === "content_block_delta") {
-            const d = data.delta;
-            if (d?.type === "thinking_delta" && d.thinking) {
-              controller.enqueue({ delta: "", thinking: d.thinking, done: false });
-            } else if (d?.type === "text_delta" && d.text) {
-              controller.enqueue({ delta: d.text, done: false });
-            } else if (!d?.type && d?.text) {
-              controller.enqueue({ delta: d.text, done: false });
-            }
-          }
-          if (data.type === "message_delta" && data.delta?.stop_reason) {
-            controller.enqueue({ delta: "", done: false, finishReason: data.delta.stop_reason });
-          }
-          if (data.type === "message_stop") {
-            controller.enqueue({ delta: "", done: true });
-            controller.close();
-            return;
-          }
-        } catch {}
+        if (handleLine(line, controller)) {
+          controller.close();
+          return;
+        }
       }
     },
     cancel() {
@@ -686,10 +712,30 @@ async function parseNDJSONStream(
   const decoder = new TextDecoder();
   let buffer = "";
 
+  // Parse one line; returns true if the stream signalled completion.
+  const handleLine = (line: string, controller: ReadableStreamDefaultController<StreamChunk>): boolean => {
+    const trimmed = line.trim();
+    if (!trimmed) return false;
+    try {
+      const data = JSON.parse(trimmed);
+      if (data.done) {
+        if (data.done_reason) controller.enqueue({ delta: "", done: false, finishReason: data.done_reason });
+        controller.enqueue({ delta: "", done: true });
+        return true;
+      }
+      const delta = extract(data);
+      if (delta) controller.enqueue({ delta, done: false });
+    } catch {}
+    return false;
+  };
+
   return new ReadableStream({
     async pull(controller) {
       const { done, value } = await reader.read();
       if (done) {
+        // Flush residual buffered line if the stream closed without a done flag.
+        if (buffer.trim()) handleLine(buffer, controller);
+        buffer = "";
         controller.close();
         return;
       }
@@ -698,19 +744,10 @@ async function parseNDJSONStream(
       buffer = lines.pop() || "";
 
       for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        try {
-          const data = JSON.parse(trimmed);
-          if (data.done) {
-            if (data.done_reason) controller.enqueue({ delta: "", done: false, finishReason: data.done_reason });
-            controller.enqueue({ delta: "", done: true });
-            controller.close();
-            return;
-          }
-          const delta = extract(data);
-          if (delta) controller.enqueue({ delta, done: false });
-        } catch {}
+        if (handleLine(line, controller)) {
+          controller.close();
+          return;
+        }
       }
     },
     cancel() {

@@ -60,7 +60,9 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   const target = req.nextUrl.searchParams.get("target");
-  const authHeader = req.nextUrl.searchParams.get("auth");
+  // Auth value arrives in a header (x-proxy-auth), never the query string, so
+  // provider API keys are kept out of URLs and access logs.
+  const authHeader = req.headers.get("x-proxy-auth");
 
   if (!target) {
     return new Response(JSON.stringify({ error: "Missing target URL" }), {
