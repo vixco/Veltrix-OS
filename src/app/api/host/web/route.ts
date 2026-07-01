@@ -1,4 +1,5 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
+import { guardHostRequest, assertPublicUrl } from "@/lib/host-guard";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -8,6 +9,35 @@ export const maxDuration = 60;
 //   { action: "search", query, count? }  -> DuckDuckGo HTML scrape, no key
 //   { action: "fetch",  url, raw?, maxChars? } -> fetch any URL, return readable text
 // All requests run on the Next.js server (host) so browser CORS is not an issue.
+//
+// Security: gated by the shared host guard (src/lib/host-guard.ts) like every
+// other host route, and the "fetch" action performs genuine SSRF protection —
+// it resolves DNS and rejects loopback/private/link-local/unique-local targets,
+// re-validating every redirect hop.
+
+// Fetch a URL with manual redirect handling so each hop is re-validated against
+// the SSRF blocklist (a public URL must not be able to redirect to an internal
+// address). Returns the final Response.
+async function ssrfSafeFetch(
+  target: string,
+  init: RequestInit,
+  maxRedirects = 5
+): Promise<Response> {
+  let current = target;
+  for (let i = 0; i <= maxRedirects; i++) {
+    await assertPublicUrl(current);
+    const res = await fetch(current, { ...init, redirect: "manual" });
+    const status = res.status;
+    if (status >= 300 && status < 400) {
+      const location = res.headers.get("location");
+      if (!location) return res;
+      current = new URL(location, current).toString();
+      continue;
+    }
+    return res;
+  }
+  throw new Error("Too many redirects");
+}
 
 function decodeEntities(s: string): string {
   return s
@@ -97,6 +127,8 @@ function extractReadable(html: string): { title: string; text: string } {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = guardHostRequest(req);
+  if (denied) return denied;
   try {
     const body = await req.json();
     const action = body.action;
@@ -112,23 +144,23 @@ export async function POST(req: NextRequest) {
     if (action === "fetch") {
       const target = String(body.url || "").trim();
       if (!target) return NextResponse.json({ error: "Missing url" }, { status: 400 });
-      let url: URL;
-      try { url = new URL(target); } catch { return NextResponse.json({ error: "Invalid url" }, { status: 400 }); }
-      // block obvious internal IPs to avoid trivial SSRF, but allow real web
-      if (url.protocol !== "https:" && url.protocol !== "http:") {
-        return NextResponse.json({ error: "Only http/https urls allowed" }, { status: 403 });
+      // Genuine SSRF protection: resolve DNS and reject internal ranges, and
+      // re-validate every redirect hop (done inside ssrfSafeFetch).
+      let res: Response;
+      try {
+        res = await ssrfSafeFetch(target, {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          },
+          signal: req.signal,
+        });
+      } catch (e: any) {
+        return NextResponse.json({ error: e?.message || "Blocked or invalid url" }, { status: 403 });
       }
       const maxChars = Math.min(Math.max(Number(body.maxChars) || 16000, 200), 80000);
       const raw = !!body.raw;
-      const res = await fetch(target, {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        },
-        signal: req.signal,
-        redirect: "follow",
-      });
       const ct = res.headers.get("content-type") || "";
       const rawText = await res.text();
       if (raw || !/html/i.test(ct)) {

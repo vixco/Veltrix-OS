@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useChatStore, useProviderStore, type Conversation } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { hostFetch } from "@/lib/host-client";
 
 interface WindowState {
   id: string;
@@ -382,7 +383,7 @@ export function DesktopEnv({ onClose, handleSend, handleStop, isStreaming, activ
     if (!fileName) return;
 
     try {
-      const res = await fetch("/api/host/fs", {
+      const res = await hostFetch("/api/host/fs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "home" }),
@@ -391,7 +392,7 @@ export function DesktopEnv({ onClose, handleSend, handleStop, isStreaming, activ
       const divider = data.path.includes('\\') ? '\\' : '/';
       const filePath = `${data.path}${divider}${fileName}`;
 
-      await fetch("/api/host/fs", {
+      await hostFetch("/api/host/fs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "write", path: filePath, content: "" }),
@@ -409,7 +410,7 @@ export function DesktopEnv({ onClose, handleSend, handleStop, isStreaming, activ
     if (!folderName) return;
 
     try {
-      const res = await fetch("/api/host/fs", {
+      const res = await hostFetch("/api/host/fs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "home" }),
@@ -418,7 +419,7 @@ export function DesktopEnv({ onClose, handleSend, handleStop, isStreaming, activ
       const divider = data.path.includes('\\') ? '\\' : '/';
       const filePath = `${data.path}${divider}${folderName}`;
 
-      await fetch("/api/host/fs", {
+      await hostFetch("/api/host/fs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "mkdir", path: filePath }),
@@ -1063,7 +1064,7 @@ function ChromiumBrowserApp({
   const refreshScreenshot = useCallback(async () => {
     if (!isActive) return;
     try {
-      const res = await fetch("/api/host/browser", {
+      const res = await hostFetch("/api/host/browser", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "screenshot", tabId: activeTabId }),
@@ -1128,7 +1129,7 @@ function ChromiumBrowserApp({
 
     setLoading(true);
     try {
-      await fetch("/api/host/browser", {
+      await hostFetch("/api/host/browser", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "navigate", url: cleanUrl, tabId: activeTabId }),
@@ -1153,7 +1154,7 @@ function ChromiumBrowserApp({
 
     setLoading(true);
     try {
-      await fetch("/api/host/browser", {
+      await hostFetch("/api/host/browser", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "click", tabId: activeTabId, x: browserX, y: browserY }),
@@ -1169,7 +1170,7 @@ function ChromiumBrowserApp({
   const handleBrowserScroll = async (dy: number) => {
     recordActivity();
     try {
-      await fetch("/api/host/browser", {
+      await hostFetch("/api/host/browser", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "scroll", tabId: activeTabId, dy }),
@@ -1183,7 +1184,7 @@ function ChromiumBrowserApp({
     recordActivity();
     setLoading(true);
     try {
-      await fetch("/api/host/browser", {
+      await hostFetch("/api/host/browser", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "type", tabId: activeTabId, text: inputText }),
@@ -1201,7 +1202,7 @@ function ChromiumBrowserApp({
     recordActivity();
     setLoading(true);
     try {
-      await fetch("/api/host/browser", {
+      await hostFetch("/api/host/browser", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "press", tabId: activeTabId, key }),
@@ -1334,7 +1335,7 @@ function FileExplorerApp({ openEditor }: FileExplorerAppProps) {
     setLoading(true);
     setFileContextMenu(null);
     try {
-      const res = await fetch("/api/host/fs", {
+      const res = await hostFetch("/api/host/fs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "list", path: p }),
@@ -1371,7 +1372,7 @@ function FileExplorerApp({ openEditor }: FileExplorerAppProps) {
     const filePath = currentPath.endsWith(divider) ? `${currentPath}${fileName}` : `${currentPath}${divider}${fileName}`;
     
     try {
-      const res = await fetch("/api/host/fs", {
+      const res = await hostFetch("/api/host/fs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "read", path: filePath }),
@@ -1390,13 +1391,13 @@ function FileExplorerApp({ openEditor }: FileExplorerAppProps) {
 
     try {
       if (creatingType === "file") {
-        await fetch("/api/host/fs", {
+        await hostFetch("/api/host/fs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "write", path: filePath, content: "" }),
         });
       } else {
-        await fetch("/api/host/fs", {
+        await hostFetch("/api/host/fs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "mkdir", path: filePath }),
@@ -1416,7 +1417,7 @@ function FileExplorerApp({ openEditor }: FileExplorerAppProps) {
     const filePath = currentPath.endsWith(divider) ? `${currentPath}${name}` : `${currentPath}${divider}${name}`;
     
     try {
-      await fetch("/api/host/fs", {
+      await hostFetch("/api/host/fs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "delete", path: filePath }),
@@ -1436,7 +1437,7 @@ function FileExplorerApp({ openEditor }: FileExplorerAppProps) {
     const toPath = `${currentPath}${divider}${newName}`;
 
     try {
-      await fetch("/api/host/fs", {
+      await hostFetch("/api/host/fs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "rename", from: fromPath, to: toPath }),
@@ -1635,7 +1636,7 @@ function TextEditorApp({ meta, onClose }: TextEditorAppProps) {
     if (!meta?.filePath) return;
     setSaving(true);
     try {
-      await fetch("/api/host/fs", {
+      await hostFetch("/api/host/fs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "write", path: meta.filePath, content }),
@@ -1688,7 +1689,7 @@ function TerminalApp() {
   useEffect(() => {
     const initCwd = async () => {
       try {
-        const res = await fetch("/api/host/fs", {
+        const res = await hostFetch("/api/host/fs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "home" }),
@@ -1721,7 +1722,7 @@ function TerminalApp() {
     if (cmd.startsWith("cd ")) {
       const targetDir = cmd.substring(3).trim();
       try {
-        const res = await fetch("/api/host/fs", {
+        const res = await hostFetch("/api/host/fs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "stat", path: targetDir ? `${cwd}/${targetDir}` : cwd }),
@@ -1741,7 +1742,7 @@ function TerminalApp() {
     }
 
     try {
-      const res = await fetch("/api/host/exec", {
+      const res = await hostFetch("/api/host/exec", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ command: cmd, cwd }),
@@ -1848,7 +1849,7 @@ function ControlPanelApp({ wallpaper, setWallpaper, accent, setAccent, setWindow
   const importBrowserProfile = async (browser: "chrome" | "edge") => {
     if (!confirm(`Importing your default ${browser} profile will close the virtual browser and copy your cookies, logins, and sessions. Continue?`)) return;
     try {
-      const res = await fetch("/api/host/browser", {
+      const res = await hostFetch("/api/host/browser", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "import_profile", browser }),
@@ -1867,7 +1868,7 @@ function ControlPanelApp({ wallpaper, setWallpaper, accent, setAccent, setWindow
   const cleanBrowserCache = async () => {
     if (!confirm("Are you sure you want to clean the Playwright session cache? This will log you out from active websites.")) return;
     try {
-      const res = await fetch("/api/host/fs", {
+      const res = await hostFetch("/api/host/fs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "home" }),
@@ -1876,13 +1877,13 @@ function ControlPanelApp({ wallpaper, setWallpaper, accent, setAccent, setWindow
       const divider = data.path.includes('\\') ? '\\' : '/';
       const cachePath = `${data.path}${divider}.playwright-data`;
       
-      await fetch("/api/host/browser", {
+      await hostFetch("/api/host/browser", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "close" }),
       });
 
-      await fetch("/api/host/fs", {
+      await hostFetch("/api/host/fs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "delete", path: cachePath }),

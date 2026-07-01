@@ -5,9 +5,11 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
+// Strict same-origin: a request with no Origin AND no Referer is a non-browser
+// caller and is rejected (fail closed), matching src/lib/host-guard.ts.
 function sameOrigin(req: NextRequest): boolean {
   const origin = req.headers.get("origin") || req.headers.get("referer") || "";
-  if (!origin) return true;
+  if (!origin) return false;
   try {
     return new URL(origin).host === (req.headers.get("host") || "");
   } catch {
