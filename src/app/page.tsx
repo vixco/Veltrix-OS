@@ -14,7 +14,8 @@ import { usePreferences } from "@/lib/preferences";
 import { notifyResponseComplete } from "@/lib/notifications";
 import { enabledCapabilities } from "@/lib/tools-catalog";
 import { useChatStore, useProviderStore } from "@/lib/store";
-import type { Attachment } from "@/lib/store";
+import type { Attachment, Message } from "@/lib/store";
+import type { ChatMessage as ProviderChatMessage } from "@/lib/providers";
 import { getProvider } from "@/lib/providers";
 import type { ContentPart } from "@/lib/providers";
 import { ARTIFACT_SYSTEM_PROMPT } from "@/lib/artifacts";
@@ -374,6 +375,28 @@ export default function HomePage() {
 
 
 
+  // Assemble the system prompt + message array for one assistant turn. Shared
+  // by the initial send, regenerate, continue, and edit-and-resend paths so the
+  // memory/project/system-prompt and web-search-hint behavior stays identical
+  // across all of them (previously copy-pasted 4x, and the web hint had drifted
+  // out of the continue/edit paths).
+  const buildTurnMessages = useCallback(
+    (history: Message[], webEnabled: boolean): ProviderChatMessage[] => {
+      const __lastUser = [...history].reverse().find((m) => m.role === "user");
+      const __query = typeof __lastUser?.content === "string" ? __lastUser.content : "";
+      const __projectId = useProjectStore.getState().activeProjectId || "global";
+      const __project = useProjectStore.getState().projects.find((p) => p.id === __projectId);
+      const __memCtx = usePreferences.getState().memory.useContext ? buildMemoryContext(__query, __projectId, 600) : "";
+      let systemPrompt = buildSystemPrompt(enhancedSystemBase(), MODES[mode].systemPromptExtra, __project?.instructions || "", __memCtx);
+      if (webEnabled) systemPrompt += "\n\n## Web search\nThe user enabled web search for this message. Call web_search for current information about their request, fetch the most relevant result with web_fetch if needed, then answer with inline source citations as [Title](url).";
+      return [
+        { role: "system" as const, content: systemPrompt },
+        ...history.map((m) => ({ role: m.role as "user" | "assistant", content: m.role === "user" ? buildMessageContent(m.content, m.attachments) : m.content })),
+      ];
+    },
+    [mode]
+  );
+
   // Build the message array for one assistant turn and stream it into a fresh
   // empty assistant message. Shared by the initial send and the steering
   // auto-continue path so behavior stays identical.
@@ -385,19 +408,11 @@ export default function HomePage() {
       const history = (conv?.messages || []).filter((m) => m.id !== assistantMsgId);
       const __lastUser = [...history].reverse().find((m) => m.role === "user");
       const __query = typeof __lastUser?.content === "string" ? __lastUser.content : "";
-      
+
       // Auto-detect web search requirement if not already forced
       const webEnabled = forceWeb || shouldEnableWebSearchAutomatically(__query);
-      
-      const __projectId = useProjectStore.getState().activeProjectId || "global";
-      const __project = useProjectStore.getState().projects.find((p) => p.id === __projectId);
-      const __memCtx = usePreferences.getState().memory.useContext ? buildMemoryContext(__query, __projectId, 600) : "";
-      let systemPrompt = buildSystemPrompt(enhancedSystemBase(), MODES[mode].systemPromptExtra, __project?.instructions || "", __memCtx);
-      if (webEnabled) systemPrompt += "\n\n## Web search\nThe user enabled web search for this message. Call web_search for current information about their request, fetch the most relevant result with web_fetch if needed, then answer with inline source citations as [Title](url).";
-      const messages = [
-        { role: "system" as const, content: systemPrompt },
-        ...history.map((m) => ({ role: m.role as "user" | "assistant", content: m.role === "user" ? buildMessageContent(m.content, m.attachments) : m.content })),
-      ];
+
+      const messages = buildTurnMessages(history, webEnabled);
       await streamInto(convId, assistantMsgId, messages, "", webEnabled || __research, conv?.assistantId ?? (useAssistantStore.getState().defaultAssistantId || undefined), __research ? 22 : 8);
       if (usePreferences.getState().memory.generateFromChat) harvestMemories(convId);
       // First exchange of a fresh chat: ask the model for a short title
@@ -409,7 +424,7 @@ export default function HomePage() {
         generateTitle(convId, userText);
       }
     },
-    [mode, addMessage, streamInto, generateTitle]
+    [mode, addMessage, streamInto, generateTitle, buildTurnMessages]
   );
 
   useEffect(() => {
@@ -448,26 +463,17 @@ export default function HomePage() {
       if (idx === -1) return;
       const history = conv.messages.slice(0, idx);
       updateMessage(convId, assistantMsgId, { content: "", thinking: "", thinkingMs: undefined, error: false });
-      const __assistantId = conv.assistantId;
       const __lastUser = [...history].reverse().find((m) => m.role === "user");
       const __query = typeof __lastUser?.content === "string" ? __lastUser.content : "";
-      
+
       // Auto-detect if web search is needed for regeneration
       const webEnabled = shouldEnableWebSearchAutomatically(__query);
-      
-      const __projectId = useProjectStore.getState().activeProjectId || "global";
-      const __project = useProjectStore.getState().projects.find((p) => p.id === __projectId);
-      const __memCtx = usePreferences.getState().memory.useContext ? buildMemoryContext(__query, __projectId, 600) : "";
-      let systemPrompt = buildSystemPrompt(enhancedSystemBase(), MODES[mode].systemPromptExtra, __project?.instructions || "", __memCtx);
-      if (webEnabled) systemPrompt += "\n\n## Web search\nThe user enabled web search for this message. Call web_search for current information about their request, fetch the most relevant result with web_fetch if needed, then answer with inline source citations as [Title](url).";
-      const messages = [
-        { role: "system" as const, content: systemPrompt },
-        ...history.map((m) => ({ role: m.role as "user" | "assistant", content: m.role === "user" ? buildMessageContent(m.content, m.attachments) : m.content })),
-      ];
+
+      const messages = buildTurnMessages(history, webEnabled);
       await streamInto(convId, assistantMsgId, messages, "", webEnabled, conv?.assistantId ?? (useAssistantStore.getState().defaultAssistantId || undefined));
       if (usePreferences.getState().memory.generateFromChat) harvestMemories(convId);
     },
-    [mode, streamInto, updateMessage]
+    [mode, streamInto, updateMessage, buildTurnMessages]
   );
 
   // Continue generating a truncated assistant reply in place. The existing
@@ -484,20 +490,13 @@ export default function HomePage() {
       if (!existing) return;
       const history = conv.messages.slice(0, idx + 1); // include truncated assistant as prefill
       updateMessage(convId, assistantMsgId, { finishReason: undefined });
-      const __lastUser = [...history].reverse().find((m) => m.role === "user");
-      const __query = typeof __lastUser?.content === "string" ? __lastUser.content : "";
-      const __projectId = useProjectStore.getState().activeProjectId || "global";
-      const __project = useProjectStore.getState().projects.find((p) => p.id === __projectId);
-      const __memCtx = usePreferences.getState().memory.useContext ? buildMemoryContext(__query, __projectId, 600) : "";
-      const systemPrompt = buildSystemPrompt(enhancedSystemBase(), MODES[mode].systemPromptExtra, __project?.instructions || "", __memCtx);
-      const messages = [
-        { role: "system" as const, content: systemPrompt },
-        ...history.map((m) => ({ role: m.role as "user" | "assistant", content: m.role === "user" ? buildMessageContent(m.content, m.attachments) : m.content })),
-      ];
+      // A continuation resumes existing text rather than starting a new query,
+      // so it deliberately opts out of the web-search hint (webEnabled = false).
+      const messages = buildTurnMessages(history, false);
       await streamInto(convId, assistantMsgId, messages, existing, false, conv.assistantId);
       if (usePreferences.getState().memory.generateFromChat) harvestMemories(convId);
     },
-    [mode, streamInto, updateMessage]
+    [mode, streamInto, updateMessage, buildTurnMessages]
   );
 
   // Edit a user message and resend: update text, drop everything after it, then
@@ -513,18 +512,14 @@ export default function HomePage() {
       const history = (fresh?.messages || []).filter((m) => m.id !== assistantMsgId);
       const __lastUser = [...history].reverse().find((m) => m.role === "user");
       const __query = typeof __lastUser?.content === "string" ? __lastUser.content : "";
-      const __projectId = useProjectStore.getState().activeProjectId || "global";
-      const __project = useProjectStore.getState().projects.find((p) => p.id === __projectId);
-      const __memCtx = usePreferences.getState().memory.useContext ? buildMemoryContext(__query, __projectId, 600) : "";
-      const systemPrompt = buildSystemPrompt(enhancedSystemBase(), MODES[mode].systemPromptExtra, __project?.instructions || "", __memCtx);
-      const messages = [
-        { role: "system" as const, content: systemPrompt },
-        ...history.map((m) => ({ role: m.role as "user" | "assistant", content: m.role === "user" ? buildMessageContent(m.content, m.attachments) : m.content })),
-      ];
-      await streamInto(convId, assistantMsgId, messages, "", false, fresh?.assistantId);
+      // Edit-and-resend behaves like a fresh send, so auto-detect web search
+      // (and thus the web-search hint) the same way startAssistantTurn does.
+      const webEnabled = shouldEnableWebSearchAutomatically(__query);
+      const messages = buildTurnMessages(history, webEnabled);
+      await streamInto(convId, assistantMsgId, messages, "", webEnabled, fresh?.assistantId);
       if (usePreferences.getState().memory.generateFromChat) harvestMemories(convId);
     },
-    [mode, addMessage, streamInto, updateMessage, truncateAfter]
+    [mode, addMessage, streamInto, updateMessage, truncateAfter, buildTurnMessages]
   );
 
 
