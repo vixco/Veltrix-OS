@@ -6,6 +6,7 @@ import { useProviderStore, useChatStore } from "@/lib/store";
 import { useMemoryStore } from "@/lib/memory-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { hostFetch } from "@/lib/host-client";
 import {
   Globe,
   Bot,
@@ -299,7 +300,7 @@ export function Onboarding({ onComplete }: { onComplete: (osModeByDefault: boole
   useEffect(() => {
     const fetchDefaultPaths = async () => {
       try {
-        const res = await fetch("/api/host/fs", {
+        const res = await hostFetch("/api/host/fs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "home" }),
@@ -356,7 +357,7 @@ export function Onboarding({ onComplete }: { onComplete: (osModeByDefault: boole
     // Second: if port check fails or empty, let's run command on host to check/start
     const cmd = ollamaExecPath.trim() ? `"${ollamaExecPath.trim()}" --version` : "ollama --version";
     try {
-      const execRes = await fetch("/api/host/exec", {
+      const execRes = await hostFetch("/api/host/exec", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ command: cmd, timeoutMs: 4000 }),
@@ -382,7 +383,7 @@ export function Onboarding({ onComplete }: { onComplete: (osModeByDefault: boole
     setWorkspaceStatus("checking");
     setWorkspaceError("");
     try {
-      const res = await fetch("/api/host/fs", {
+      const res = await hostFetch("/api/host/fs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "stat", path: workspace.trim() }),
@@ -405,7 +406,7 @@ export function Onboarding({ onComplete }: { onComplete: (osModeByDefault: boole
   const handleCreateWorkspace = async () => {
     setWorkspaceStatus("creating");
     try {
-      const res = await fetch("/api/host/fs", {
+      const res = await hostFetch("/api/host/fs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "mkdir", path: workspace.trim() }),

@@ -48,6 +48,8 @@ interface MemoryState {
   update: (id: string, updates: Partial<MemoryNode>) => void;
   remove: (id: string) => void;
   touch: (id: string) => void;
+  /** Batched variant of touch: update many nodes in a single set/persist. */
+  touchMany: (ids: string[]) => void;
   link: (from: string, to: string, reason?: string, weight?: number) => void;
   unlink: (linkId: string) => void;
   forProject: (projectId: string) => MemoryNode[];
@@ -109,6 +111,19 @@ export const useMemoryStore = create<MemoryState>()(
               : n
           ),
         })),
+
+      touchMany: (ids) => {
+        if (!ids.length) return;
+        const idSet = new Set(ids);
+        const now = Date.now();
+        set((s) => ({
+          nodes: s.nodes.map((n) =>
+            idSet.has(n.id)
+              ? { ...n, lastAccessed: now, recallCount: n.recallCount + 1 }
+              : n
+          ),
+        }));
+      },
 
       link: (from, to, reason = "wiki", weight = 1) => {
         if (from === to) return;

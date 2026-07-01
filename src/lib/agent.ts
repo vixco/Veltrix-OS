@@ -11,6 +11,7 @@
 
 import type { ChatMessage, ContentPart, StreamChunk } from "./providers";
 import { usePreferences } from "./preferences";
+import { hostFetch } from "./host-client";
 
 function resolveAgentPath(filePath: string | undefined, workspacePath: string): string | undefined {
   if (!filePath) return undefined;
@@ -47,7 +48,7 @@ let _hostEnv: HostEnv | null | undefined; // undefined = not yet probed
 export async function getHostEnv(): Promise<HostEnv | null> {
   if (_hostEnv !== undefined) return _hostEnv;
   try {
-    const res = await fetch("/api/host/exec", {
+    const res = await hostFetch("/api/host/exec", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ command: "hostname", timeoutMs: 4000 }),
@@ -57,7 +58,7 @@ export async function getHostEnv(): Promise<HostEnv | null> {
     const hostname = String(data.stdout || "").trim();
     let nodeVersion: string | undefined;
     try {
-      const r2 = await fetch("/api/host/exec", {
+      const r2 = await hostFetch("/api/host/exec", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ command: "node -v", timeoutMs: 4000 }),
@@ -163,7 +164,7 @@ export interface AgentTool {
 }
 
 async function postJSON(url: string, body: any, signal?: AbortSignal) {
-  const res = await fetch(url, {
+  const res = await hostFetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

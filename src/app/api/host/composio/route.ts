@@ -1,24 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Composio } from "@composio/core";
+import { guardHostRequest } from "@/lib/host-guard";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-function sameOrigin(req: NextRequest): boolean {
-  const origin = req.headers.get("origin") || req.headers.get("referer") || "";
-  if (!origin) return true;
-  try {
-    return new URL(origin).host === (req.headers.get("host") || "");
-  } catch {
-    return false;
-  }
-}
+// Gated by the shared host guard (env gate + strict same-origin + token check),
+// exactly like every other /api/host/* route (exec/fs/browser/web).
 
 export async function POST(req: NextRequest) {
-  if (!sameOrigin(req)) {
-    return NextResponse.json({ error: "Cross-origin request not allowed" }, { status: 403 });
-  }
+  const denied = guardHostRequest(req);
+  if (denied) return denied;
 
   try {
     const body = await req.json();

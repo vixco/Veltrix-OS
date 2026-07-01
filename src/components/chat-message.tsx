@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo, memo } from "react";
 import { Copy, Check, Pencil, RefreshCw, FileText, ChevronsRight, Volume2, Square } from "lucide-react";
 import { useChatStore, useArtifactStore } from "@/lib/store";
 import type { Message } from "@/lib/store";
@@ -13,7 +13,7 @@ import { ThinkingBlock } from "./thinking-block";
 import { useSpeechStore, speak, stopSpeaking, isSpeechSupported } from "@/lib/speech";
 import { RichText } from "./tool-block";
 
-export function ChatMessage({
+function ChatMessageComponent({
   message,
   convId,
   onRegenerate,
@@ -38,9 +38,16 @@ export function ChatMessage({
 
   const isUser = message.role === "user";
 
-  const blocks: MessageBlock[] = !isUser
-    ? parseMessageContent(message.content)
-    : [{ type: "text", content: message.content }];
+  // parseMessageContent runs a multi-regex parse; memoize it so streaming
+  // re-renders (one per token, across every message) don't re-parse content
+  // that has not changed.
+  const blocks: MessageBlock[] = useMemo(
+    () =>
+      !isUser
+        ? parseMessageContent(message.content)
+        : [{ type: "text", content: message.content }],
+    [message.content, isUser]
+  );
 
   const artifacts = blocks
     .filter((b) => b.type === "artifact")
@@ -244,6 +251,10 @@ export function ChatMessage({
     </div>
   );
 }
+
+// Wrap in React.memo so a message only re-renders when its own props change,
+// not on every token appended to any sibling message during streaming.
+export const ChatMessage = memo(ChatMessageComponent);
 
 function ActionBtn({
   onClick,

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { guardHostRequest } from "@/lib/host-guard";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -10,29 +11,14 @@ export const maxDuration = 300;
 // drive autonomously: navigate, click, type, scroll, screenshot, run
 // JS, read text, manage tabs. No external API key required.
 //
-// Safety: same host-access gate as /api/host/exec. Browser is headless
-// by default; set VELTRIX_BROWSER_HEADFUL=true to see it. A single
-// browser/context is reused across requests so sessions stay warm and
-// tabs persist between tool calls.
+// Safety: access is enforced by the shared host guard
+// (src/lib/host-guard.ts). Browser is headless by default; set
+// VELTRIX_BROWSER_HEADFUL=true to see it. A single browser/context is
+// reused across requests so sessions stay warm and tabs persist between
+// tool calls.
 // =================================================================
 
 type AnyJson = Record<string, any>;
-
-function hostAccessEnabled(): boolean {
-  if (process.env.NODE_ENV !== "production") return true;
-  return process.env.VELTRIX_HOST_ACCESS === "true";
-}
-
-function sameOrigin(req: NextRequest): boolean {
-  const origin = req.headers.get("origin") || req.headers.get("referer") || "";
-  if (!origin) return true;
-  try {
-    const host = req.headers.get("host") || "";
-    return new URL(origin).host === host;
-  } catch {
-    return false;
-  }
-}
 
 // ---- Persistent browser state --------------------------------------------
 
@@ -40,11 +26,13 @@ interface BrowserState {
   pw: typeof import("playwright") | null;
   browser: any | null;
   context: any | null;
+  /** In-flight context launch, so concurrent requests share one launch. */
+  contextPromise: Promise<any> | null;
 }
 
 const globalKey = "__veltrix_browser__";
 const g: any = globalThis as any;
-if (!g[globalKey]) g[globalKey] = { pw: null, browser: null, context: null } as BrowserState;
+if (!g[globalKey]) g[globalKey] = { pw: null, browser: null, context: null, contextPromise: null } as BrowserState;
 const state: BrowserState = g[globalKey];
 
 async function loadPw(): Promise<typeof import("playwright") | null> {
@@ -60,32 +48,42 @@ async function loadPw(): Promise<typeof import("playwright") | null> {
 async function getContext(): Promise<any> {
   const pw = await loadPw();
   if (!pw) throw new Error("Playwright is not installed on the host.");
-  if (!state.context) {
+  if (state.context) return state.context;
+  // Two concurrent requests must not both call launchPersistentContext on the
+  // same userDataDir (the second fails on the profile lock). Cache a single
+  // in-flight launch promise, assigned synchronously before the first await,
+  // and have every caller await it.
+  if (!state.contextPromise) {
     const headful = process.env.VELTRIX_BROWSER_HEADFUL === "true";
-    const path = await import("path");
-    const userDataDir = path.join(process.cwd(), ".playwright-data");
-    
-    state.context = await pw.chromium.launchPersistentContext(userDataDir, {
-      headless: !headful,
-      args: [
-        "--no-sandbox",
-        "--disable-blink-features=AutomationControlled",
-        "--enable-automation",
-      ],
-      userAgent:
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
-      viewport: { width: 1280, height: 900 },
-      deviceScaleFactor: 1,
-      locale: "en-US",
-    });
-    
-    state.context.on("close", () => {
-      state.context = null;
-      state.browser = null;
-    });
-    state.browser = state.context;
+    state.contextPromise = (async () => {
+      const path = await import("path");
+      const userDataDir = path.join(process.cwd(), ".playwright-data");
+      const context = await pw.chromium.launchPersistentContext(userDataDir, {
+        headless: !headful,
+        args: [
+          "--no-sandbox",
+          "--disable-blink-features=AutomationControlled",
+          "--enable-automation",
+        ],
+        userAgent:
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+        viewport: { width: 1280, height: 900 },
+        deviceScaleFactor: 1,
+        locale: "en-US",
+      });
+      context.on("close", () => {
+        state.context = null;
+        state.browser = null;
+        state.contextPromise = null;
+      });
+      state.context = context;
+      state.browser = context;
+      return context;
+    })();
+    // If the launch fails, clear the cached promise so a later request retries.
+    state.contextPromise.catch(() => { state.contextPromise = null; });
   }
-  return state.context;
+  return state.contextPromise;
 }
 
 async function getPage(tabId?: number): Promise<{ page: any; tabId: number; context: any }> {
@@ -179,8 +177,8 @@ const MAX_TEXT = 16000;
 const MAX_HTML = 20000;
 
 export async function POST(req: NextRequest) {
-  if (!hostAccessEnabled()) return fail(403, "Host browser access is disabled. Set VELTRIX_HOST_ACCESS=true on the server.");
-  if (!sameOrigin(req)) return fail(403, "Cross-origin browser control not allowed.");
+  const denied = guardHostRequest(req);
+  if (denied) return denied;
 
   let body: AnyJson;
   try {

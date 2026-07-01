@@ -289,9 +289,11 @@ export function retrieveMemories(
     if (used + cost > budgetTokens && picked.length >= 3) break;
     picked.push(r);
     used += cost;
-    store.touch(r.node.id);
     if (picked.length >= 12) break;
   }
+  // Retrieval is now pure: it does NOT mutate the store. The caller
+  // (buildMemoryContext) applies a single batched lastAccessed/recallCount
+  // update, instead of one Zustand set + localStorage persist per picked node.
   return picked;
 }
 
@@ -313,6 +315,11 @@ export function buildMemoryContext(
   budgetTokens = 600
 ): string {
   const memories = retrieveMemories(query, projectId, budgetTokens);
+  // Single batched update for the memories we actually used (one set + persist),
+  // instead of retrieval touching each node individually on every message.
+  if (memories.length) {
+    useMemoryStore.getState().touchMany(memories.map((m) => m.node.id));
+  }
   const block = formatMemoryBlock(memories);
   if (!block) return "";
   return [

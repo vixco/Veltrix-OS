@@ -216,5 +216,12 @@ export function CoworkPanel({ open, onClose, artifact }: CoworkPanelProps) {
 }
 
 function generateShareToken(): string {
-  return Math.random().toString(36).slice(2, 12) + Date.now().toString(36);
+  // Cryptographically strong, unguessable token (192 bits, base36). Math.random
+  // is not a CSPRNG and Date.now is guessable, so a share link built from them
+  // could be brute-forced/enumerated.
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  let out = "";
+  for (const b of bytes) out += b.toString(36).padStart(2, "0");
+  return out;
 }

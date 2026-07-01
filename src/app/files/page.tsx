@@ -11,12 +11,13 @@ import { usePreferences } from "@/lib/preferences";
 import { ClaudeLogo } from "@/components/claude-logo";
 import { cn, downloadText } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { hostFetch } from "@/lib/host-client";
 
 interface Entry { name: string; kind: "dir" | "file"; size: number; }
 interface FsResp { path: string; entries?: Entry[]; content?: string; error?: string; }
 
 async function fsApi(body: Record<string, any>): Promise<any> {
-  const res = await fetch("/api/host/fs", {
+  const res = await hostFetch("/api/host/fs", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
   const text = await res.text();

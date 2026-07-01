@@ -2,6 +2,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { guardHostRequest } from "@/lib/host-guard";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -15,30 +16,43 @@ export const maxDuration = 30;
 //   { action: "mkdir", path }            -> create a directory
 //   { action: "delete", path }           -> delete a file or directory (recursive)
 //   { action: "rename", from, to }       -> rename/move a path
-// Same dev/production gate as /api/host/exec.
+// Access is enforced by the shared host guard (src/lib/host-guard.ts).
+//
+// Optional jail: set VELTRIX_FS_ROOT to confine every path to that directory.
+// Regardless of the jail, recursive deletion of a filesystem/drive root is
+// always refused.
 
-function hostAccessEnabled(): boolean {
-  if (process.env.NODE_ENV !== "production") return true;
-  return process.env.VELTRIX_HOST_ACCESS === "true";
+// Resolve VELTRIX_FS_ROOT once (if configured) so paths can be confined to it.
+const FS_ROOT = process.env.VELTRIX_FS_ROOT ? path.resolve(process.env.VELTRIX_FS_ROOT) : null;
+
+/** Throw if the jail is enabled and `target` escapes it. */
+function assertInsideRoot(target: string) {
+  if (!FS_ROOT) return;
+  const rel = path.relative(FS_ROOT, target);
+  const escapes = rel === ".." || rel.startsWith(".." + path.sep) || path.isAbsolute(rel);
+  if (target !== FS_ROOT && escapes) {
+    throw new Error(`Path is outside the allowed root (VELTRIX_FS_ROOT): ${target}`);
+  }
 }
-function sameOrigin(req: NextRequest): boolean {
-  const origin = req.headers.get("origin") || req.headers.get("referer") || "";
-  if (!origin) return true;
-  try { return new URL(origin).host === (req.headers.get("host") || ""); } catch { return false; }
+
+/** True when `p` is a filesystem root or a Windows drive root (e.g. "/", "C:\\"). */
+function isFsRoot(p: string): boolean {
+  const resolved = path.resolve(p);
+  if (resolved === path.parse(resolved).root) return true;
+  // Windows drive root with or without trailing separator ("C:", "C:\").
+  if (/^[A-Za-z]:[\\/]?$/.test(resolved)) return true;
+  return false;
 }
 
 export async function POST(req: NextRequest) {
-  if (!hostAccessEnabled()) {
-    return NextResponse.json({ error: "Host filesystem access is disabled on this server. Set VELTRIX_HOST_ACCESS=true to enable." }, { status: 403 });
-  }
-  if (!sameOrigin(req)) {
-    return NextResponse.json({ error: "Cross-origin host access not allowed" }, { status: 403 });
-  }
+  const denied = guardHostRequest(req);
+  if (denied) return denied;
   try {
     const body = await req.json();
     const action = String(body.action || "");
     const rawPath = String(body.path || "");
-    const target = rawPath ? path.resolve(rawPath) : process.cwd();
+    const target = rawPath ? path.resolve(rawPath) : (FS_ROOT || process.cwd());
+    if (action !== "home") assertInsideRoot(target);
 
     if (action === "list") {
       const entries = await fs.readdir(target, { withFileTypes: true });
@@ -79,6 +93,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "delete") {
+      // Never allow a recursive delete of a filesystem / drive root.
+      if (isFsRoot(target)) {
+        return NextResponse.json({ path: target, deleted: false, error: "Refusing to delete a filesystem root" }, { status: 400 });
+      }
       const st = await fs.stat(target).catch(() => null);
       if (!st) return NextResponse.json({ path: target, deleted: false, error: "Not found" }, { status: 404 });
       if (st.isDirectory()) await fs.rm(target, { recursive: true, force: true });
@@ -90,6 +108,8 @@ export async function POST(req: NextRequest) {
       const from = path.resolve(String(body.from || ""));
       const to = path.resolve(String(body.to || ""));
       if (!from || !to) return NextResponse.json({ error: "Missing from/to" }, { status: 400 });
+      assertInsideRoot(from);
+      assertInsideRoot(to);
       await fs.mkdir(path.dirname(to), { recursive: true });
       await fs.rename(from, to);
       return NextResponse.json({ from, to, renamed: true });
