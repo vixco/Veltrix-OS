@@ -31,9 +31,18 @@ export default function SharedArtifactPage({ params }: { params: Promise<{ token
         return;
       }
       try {
-        const records = await pb().collection("shared_artifacts").getList(1, 1, {
-          filter: `shareToken = "${token}"`,
-        });
+        // Parameterized filter (no string interpolation of the URL segment) and
+        // visibility enforcement: an anonymous visitor may only resolve PUBLIC
+        // shares; a signed-in owner may also resolve their own private shares.
+        // NOTE: this client filter is defense-in-depth only — the PocketBase
+        // collection's List/View API rules MUST also enforce this server-side
+        // (see README "Sharing security").
+        const client = pb();
+        const ownerId = client.authStore.isValid ? client.authStore.record?.id : null;
+        const filter = ownerId
+          ? client.filter("shareToken = {:t} && (isPublic = true || owner = {:owner})", { t: token, owner: ownerId })
+          : client.filter("shareToken = {:t} && isPublic = true", { t: token });
+        const records = await client.collection("shared_artifacts").getList(1, 1, { filter });
         if (records.items.length === 0) {
           setError("Artifact not found or link has expired.");
           return;
